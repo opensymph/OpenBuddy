@@ -1,0 +1,633 @@
+@charset "UTF-8";
+/**
+ * WB Foundation Tokens —— SCSS 运行时唯一入口。
+ *
+ * 维护方式：直接维护本文件的 @forward 顺序；token 值维护在同目录各 *.scss 真源中。
+ */
+/* WB Foundation Tokens —— 唯一入口，业务 SCSS 通过 @use 该文件即可获得全部 wb token */
+/**
+ * WB Colors · Base —— 设计交付 SCSS 真源与运行时入口（base 层）。
+ *
+ * 维护方式：直接修改本文件；`scripts/build-tokens.ts` 会解析 light/dark 声明，
+ * 生成 Playbook/文档使用的 *.tokens.ts 元数据并执行校验。
+ *
+ * 元数据约定（可选）：在 token 声明前添加 `@usage xxx` / `@category text` 元数据注释，
+ * 未声明时构建脚本会按 token 名称推断 category，并生成兜底 usage。
+ *
+ * 分层约定：
+ * - 本文件（base）= palette + 基础 semantic（bg/text/border/control 等通用语义）。
+ * - `colors.component.scss` (component) = 组件级 token（button/icon/status/sidebar/badge/todo-menu 等）。
+ * - 同名 token 不允许同时存在于两层（build-tokens 校验会失败）。新增组件级 token 请放 component 层。
+ *
+ * 主题策略（与设计稿 v2 不同的取舍）：
+ * - 设计稿 v2 把 `:root` 默认设为 dark token；本文件保留**默认 = light**，
+ *   通过 data-theme=dark / IDE Night / vscode-dark / .dark 选择器覆盖到 dark。
+ *   原因：避免 IDE Light 主题在没有外部 light class 的情况下显示为 dark。
+ *
+ * 注意：build-tokens.ts 用 indexOf 字面量匹配 dark 选择器；本注释里禁止出现完整的
+ *   data-theme=dark 选择器字面量（含中括号那种），否则会被错认为 dark 块的起点。
+ */
+:root,
+body[data-vscode-theme-name="IDE Light"] {
+  --wb-palette-black-10: rgba(0, 0, 0, 0.1);
+  --wb-palette-black-20: rgba(0, 0, 0, 0.2);
+  --wb-palette-black-30: rgba(0, 0, 0, 0.3);
+  --wb-palette-black-40: rgba(0, 0, 0, 0.4);
+  --wb-palette-black-50: rgba(0, 0, 0, 0.5);
+  --wb-palette-black-60: rgba(0, 0, 0, 0.6);
+  --wb-palette-black-70: rgba(0, 0, 0, 0.7);
+  --wb-palette-black-75: rgba(0, 0, 0, 0.75);
+  --wb-palette-black-90: rgba(0, 0, 0, 0.9);
+  --wb-palette-black-100: #000000;
+  --wb-palette-white-10: rgba(255, 255, 255, 0.1);
+  --wb-palette-white-20: rgba(255, 255, 255, 0.2);
+  --wb-palette-white-30: rgba(255, 255, 255, 0.3);
+  --wb-palette-white-40: rgba(255, 255, 255, 0.4);
+  --wb-palette-white-50: rgba(255, 255, 255, 0.5);
+  --wb-palette-white-60: rgba(255, 255, 255, 0.6);
+  --wb-palette-white-70: rgba(255, 255, 255, 0.7);
+  --wb-palette-white-80: rgba(255, 255, 255, 0.8);
+  --wb-palette-white-90: rgba(255, 255, 255, 0.9);
+  --wb-palette-white-100: #FFFFFF;
+  --wb-palette-brand-1: #DFF7F2;
+  --wb-palette-brand-2: #BFF0E6;
+  --wb-palette-brand-3: #9FE8D9;
+  --wb-palette-brand-4: #80E1CD;
+  --wb-palette-brand-5: #60D9C0;
+  --wb-palette-brand-7: #40D1B3;
+  --wb-palette-brand-8: #00C29A;
+  --wb-palette-brand-9: #009273;
+  --wb-palette-brand-10: #00614D;
+  --wb-palette-gray-1: #FAFAFA;
+  --wb-palette-gray-2: #F7F7F7;
+  --wb-palette-gray-3: #F2F2F2;
+  --wb-palette-gray-4: #EBEBEB;
+  --wb-palette-gray-5: #E6E6E6;
+  --wb-palette-green-1: #E7F8F0;
+  --wb-palette-green-2: #C2EFD6;
+  --wb-palette-green-3: #A3E7C2;
+  --wb-palette-green-4: #85DFAD;
+  --wb-palette-green-5: #66D799;
+  --wb-palette-green-6: #47CF84;
+  --wb-palette-green-7: #29C770;
+  --wb-palette-green-8: #0CBF5B;
+  --wb-palette-green-9: #088F50;
+  --wb-palette-orange-1: #FFEDDF;
+  --wb-palette-orange-2: #FFDCBF;
+  --wb-palette-orange-3: #FFCA9F;
+  --wb-palette-orange-4: #FFB980;
+  --wb-palette-orange-5: #FFA760;
+  --wb-palette-orange-6: #FF9540;
+  --wb-palette-orange-7: #FF8420;
+  --wb-palette-orange-8: #FF7800;
+  --wb-palette-orange-9: #C04100;
+  --wb-palette-orange-10: #800F00;
+  --wb-palette-red-1: #FCE8E8;
+  --wb-palette-red-2: #F9D1D1;
+  --wb-palette-red-3: #F5B9B9;
+  --wb-palette-red-4: #F2A2A2;
+  --wb-palette-red-5: #EF8B8B;
+  --wb-palette-red-6: #EC7474;
+  --wb-palette-red-7: #E85C5C;
+  --wb-palette-red-8: #F64041;
+  --wb-palette-red-9: #B42C3F;
+  --wb-palette-red-10: #821238;
+  --wb-color-bg-primary-default: var(--wb-palette-gray-3);
+  --wb-color-bg-primary-hover: var(--wb-palette-gray-4);
+  --wb-color-bg-primary-active: var(--wb-palette-gray-5);
+  --wb-color-bg-secondary-default: var(--wb-palette-white-100);
+  --wb-color-bg-secondary-hover-active: var(--wb-palette-gray-2);
+  --wb-color-border-primary: var(--wb-palette-gray-5);
+  --wb-color-border-secondary: var(--wb-palette-gray-4);
+  --wb-color-border-tertiary: var(--wb-palette-gray-3);
+  --wb-color-border-focus: var(--wb-palette-black-75);
+  --wb-color-mask-color: var(--wb-palette-black-60);
+  --wb-color-text-primary: var(--wb-palette-black-90);
+  --wb-color-text-secondary: var(--wb-palette-black-70);
+  --wb-color-text-tertiary: var(--wb-palette-black-50);
+  --wb-color-text-disabled: var(--wb-palette-black-30);
+  --wb-color-text-solid: var(--wb-palette-black-100);
+  --wb-color-text-brand-default: var(--wb-palette-brand-8);
+  --wb-color-text-brand-hover: var(--wb-palette-brand-7);
+  --wb-color-text-brand-focus: var(--wb-palette-brand-5);
+  --wb-color-text-brand-active: var(--wb-palette-brand-9);
+  --wb-color-text-brand-disabled: var(--wb-palette-brand-3);
+  --wb-color-text-link-default: #1470B4;
+  --wb-color-text-link-hover: #0E58A0;
+  --wb-color-text-error-default: var(--wb-palette-red-8);
+  --wb-color-text-error-hover: var(--wb-palette-red-7);
+  --wb-color-text-error-focus: var(--wb-palette-red-5);
+  --wb-color-text-error-active: var(--wb-palette-red-9);
+  --wb-color-text-error-disabled: var(--wb-palette-red-3);
+  --wb-color-text-success-default: var(--wb-palette-green-8);
+  --wb-color-text-success-hover: var(--wb-palette-green-7);
+  --wb-color-text-success-focus: var(--wb-palette-green-5);
+  --wb-color-text-success-active: var(--wb-palette-green-9);
+  --wb-color-text-success-disabled: var(--wb-palette-green-3);
+  --wb-color-text-warning-default: var(--wb-palette-orange-8);
+  --wb-color-text-warning-hover: var(--wb-palette-orange-7);
+  --wb-brand-primary: var(--wb-palette-brand-8);
+  --wb-text-strong: var(--wb-color-text-primary);
+  --wb-text-medium: var(--wb-color-text-secondary);
+  --wb-text-weak: var(--wb-color-text-tertiary);
+  --wb-text-disable: var(--wb-color-text-disabled);
+  --wb-text-white: var(--wb-palette-white-100);
+  --wb-text-muted: var(--wb-color-text-disabled);
+  --wb-text-link: var(--wb-palette-brand-8);
+  --wb-text-on-primary: var(--wb-palette-white-100);
+  --wb-bg-primary: var(--wb-palette-white-100);
+  --wb-bg-secondary: var(--wb-color-bg-secondary-hover-active);
+  --wb-bg-tertiary: var(--wb-color-bg-primary-hover);
+  --wb-bg-hover: color-mix(in srgb, var(--wb-palette-black-100) 5%, transparent);
+  --wb-bg-active: color-mix(in srgb, var(--wb-palette-black-100) 8%, transparent);
+  --wb-bg-overlay: var(--wb-palette-black-40);
+  --wb-border-default: color-mix(in srgb, var(--wb-palette-black-100) 8%, transparent);
+  --wb-border-weak: color-mix(in srgb, var(--wb-palette-black-100) 4%, transparent);
+  --wb-border-subtle: var(--wb-palette-gray-3);
+  --wb-border-strong: var(--wb-color-border-primary);
+  --wb-border-focus: var(--wb-color-border-focus);
+  --wb-control-selected-bg: var(--wb-palette-black-90);
+  --wb-control-selected-bg-hover: color-mix(in srgb, var(--wb-palette-black-100) 96%, transparent);
+  --wb-control-selected-fg: var(--wb-palette-white-100);
+  --wb-success: var(--wb-status-success);
+  --wb-warning: var(--wb-status-warning);
+  --wb-error: var(--wb-status-error);
+  --wb-info: var(--wb-status-info);
+  --wb-warning-soft: var(--wb-status-warning-soft);
+  --wb-error-foreground: var(--wb-status-error);
+  --wb-text-inverse: var(--wb-text-white);
+  --wb-icon-default: var(--wb-icon-primary);
+  --wb-home-bg-primary: #f2f2f2;
+  --wb-home-bg-secondary: #fafafa;
+  --wb-quick-action-sub-item-bg: #ebebeb;
+}
+
+[data-theme=dark],
+body[data-vscode-theme-name="IDE Night"],
+body.vscode-dark,
+.vscode-dark,
+body.dark,
+.dark {
+  --wb-palette-black-10: rgba(0, 0, 0, 0.1);
+  --wb-palette-black-20: rgba(0, 0, 0, 0.2);
+  --wb-palette-black-30: rgba(0, 0, 0, 0.3);
+  --wb-palette-black-40: rgba(0, 0, 0, 0.4);
+  --wb-palette-black-50: rgba(0, 0, 0, 0.5);
+  --wb-palette-black-60: rgba(0, 0, 0, 0.6);
+  --wb-palette-black-70: rgba(0, 0, 0, 0.7);
+  --wb-palette-black-75: rgba(0, 0, 0, 0.75);
+  --wb-palette-black-90: rgba(0, 0, 0, 0.9);
+  --wb-palette-black-100: #000000;
+  --wb-palette-white-10: rgba(255, 255, 255, 0.1);
+  --wb-palette-white-20: rgba(255, 255, 255, 0.2);
+  --wb-palette-white-30: rgba(255, 255, 255, 0.3);
+  --wb-palette-white-40: rgba(255, 255, 255, 0.4);
+  --wb-palette-white-50: rgba(255, 255, 255, 0.5);
+  --wb-palette-white-60: rgba(255, 255, 255, 0.6);
+  --wb-palette-white-70: rgba(255, 255, 255, 0.7);
+  --wb-palette-white-80: rgba(255, 255, 255, 0.8);
+  --wb-palette-white-90: rgba(255, 255, 255, 0.9);
+  --wb-palette-white-100: #FFFFFF;
+  --wb-palette-brand-1: #0e2520;
+  --wb-palette-brand-2: #163932;
+  --wb-palette-brand-3: #185f51;
+  --wb-palette-brand-4: #168770;
+  --wb-palette-brand-5: #1ca98c;
+  --wb-palette-brand-7: #22cba8;
+  --wb-palette-brand-8: #4cf0ce;
+  --wb-palette-brand-9: #7cf0d8;
+  --wb-palette-brand-10: #a8f5e5;
+  --wb-palette-gray-1: #141414;
+  --wb-palette-gray-2: #292929;
+  --wb-palette-gray-3: #1f1f1f;
+  --wb-palette-gray-4: #242424;
+  --wb-palette-gray-5: #3a3a3a;
+  --wb-palette-green-1: #223b30;
+  --wb-palette-green-2: #153825;
+  --wb-palette-green-3: #175d37;
+  --wb-palette-green-4: #188247;
+  --wb-palette-green-5: #1ea35a;
+  --wb-palette-green-6: #24c46c;
+  --wb-palette-green-7: #2ee07e;
+  --wb-palette-green-8: #43f08f;
+  --wb-palette-green-9: #b3e8d1;
+  --wb-palette-orange-1: #25180e;
+  --wb-palette-orange-2: #2e1f12;
+  --wb-palette-orange-3: #462e1a;
+  --wb-palette-orange-4: #663c19;
+  --wb-palette-orange-5: #8b4914;
+  --wb-palette-orange-6: #a75818;
+  --wb-palette-orange-7: #c3671c;
+  --wb-palette-orange-8: #ec7913;
+  --wb-palette-orange-9: #f1854d;
+  --wb-palette-orange-10: #f2988c;
+  --wb-palette-red-1: #250e0e;
+  --wb-palette-red-2: #260e0e;
+  --wb-palette-red-3: #3a1616;
+  --wb-palette-red-4: #551515;
+  --wb-palette-red-5: #6a1a1a;
+  --wb-palette-red-6: #8a1414;
+  --wb-palette-red-7: #a31717;
+  --wb-palette-red-8: #af191a;
+  --wb-palette-red-9: #dc4258;
+  --wb-palette-red-10: #f07aa2;
+  --wb-color-bg-primary-default: var(--wb-palette-gray-3);
+  --wb-color-bg-primary-hover: var(--wb-palette-gray-4);
+  --wb-color-bg-primary-active: var(--wb-palette-gray-5);
+  --wb-color-bg-secondary-default: var(--wb-palette-white-100);
+  --wb-color-bg-secondary-hover-active: var(--wb-palette-gray-2);
+  --wb-color-border-primary: #262626;
+  --wb-color-border-secondary: var(--wb-palette-gray-5);
+  --wb-color-border-tertiary: var(--wb-palette-gray-4);
+  --wb-color-border-focus: var(--wb-palette-white-70);
+  --wb-color-mask-color: rgba(0, 0, 0, 0.8);
+  --wb-color-text-primary: rgba(255, 255, 255, 0.92);
+  --wb-color-text-secondary: rgba(255, 255, 255, 0.65);
+  --wb-color-text-tertiary: rgba(255, 255, 255, 0.45);
+  --wb-color-text-disabled: rgba(255, 255, 255, 0.25);
+  --wb-color-text-solid: var(--wb-palette-white-100);
+  --wb-color-text-brand-default: var(--wb-palette-brand-7);
+  --wb-color-text-brand-hover: var(--wb-palette-brand-8);
+  --wb-color-text-brand-focus: var(--wb-palette-brand-9);
+  --wb-color-text-brand-active: var(--wb-palette-brand-5);
+  --wb-color-text-brand-disabled: rgba(61, 217, 182, 0.35);
+  --wb-color-text-link-default: #46a8f0;
+  --wb-color-text-link-hover: #5ea9f2;
+  --wb-color-text-error-default: var(--wb-palette-red-7);
+  --wb-color-text-error-hover: var(--wb-palette-red-8);
+  --wb-color-text-error-focus: var(--wb-palette-red-9);
+  --wb-color-text-error-active: var(--wb-palette-red-6);
+  --wb-color-text-error-disabled: rgba(244, 115, 116, 0.35);
+  --wb-color-text-success-default: var(--wb-palette-green-6);
+  --wb-color-text-success-hover: var(--wb-palette-green-7);
+  --wb-color-text-success-focus: var(--wb-palette-green-8);
+  --wb-color-text-success-active: #77f0b8;
+  --wb-color-text-success-disabled: rgba(78, 216, 138, 0.35);
+  --wb-color-text-warning-default: var(--wb-palette-orange-7);
+  --wb-color-text-warning-hover: var(--wb-palette-orange-8);
+  --wb-brand-primary: var(--wb-palette-brand-7);
+  --wb-text-strong: var(--wb-color-text-primary);
+  --wb-text-medium: var(--wb-color-text-secondary);
+  --wb-text-weak: var(--wb-color-text-tertiary);
+  --wb-text-disable: var(--wb-color-text-disabled);
+  --wb-text-white: var(--wb-palette-white-100);
+  --wb-text-muted: var(--wb-color-text-disabled);
+  --wb-text-link: var(--wb-color-text-brand-default);
+  --wb-text-on-primary: var(--wb-palette-white-100);
+  --wb-bg-primary: var(--wb-palette-gray-3);
+  --wb-bg-secondary: var(--wb-palette-gray-2);
+  --wb-bg-tertiary: var(--wb-palette-gray-4);
+  --wb-bg-hover: color-mix(in srgb, var(--wb-palette-white-100) 6%, transparent);
+  --wb-bg-active: var(--wb-palette-white-10);
+  --wb-bg-overlay: var(--wb-palette-black-60);
+  --wb-border-default: color-mix(in srgb, var(--wb-palette-black-100) 8%, transparent);
+  --wb-border-weak: color-mix(in srgb, var(--wb-palette-black-100) 4%, transparent);
+  --wb-border-subtle: color-mix(in srgb, var(--wb-palette-white-100) 6%, transparent);
+  --wb-border-strong: var(--wb-color-border-primary);
+  --wb-border-focus: var(--wb-color-border-focus);
+  --wb-control-selected-bg: var(--wb-color-text-brand-default);
+  --wb-control-selected-bg-hover: var(--wb-color-text-brand-hover);
+  --wb-control-selected-fg: var(--wb-palette-white-100);
+  --wb-success: var(--wb-status-success);
+  --wb-warning: var(--wb-status-warning);
+  --wb-error: var(--wb-status-error);
+  --wb-info: var(--wb-status-info);
+  --wb-warning-soft: var(--wb-status-warning-soft);
+  --wb-error-foreground: var(--wb-status-error);
+  --wb-text-inverse: var(--wb-text-white);
+  --wb-icon-default: var(--wb-icon-primary);
+  --wb-home-bg-primary: #1f1f1f;
+  --wb-home-bg-secondary: #141414;
+  --wb-quick-action-sub-item-bg: rgba(255, 255, 255, 0.14);
+}
+
+/**
+ * WB Colors · Component —— 设计交付 SCSS 真源与运行时入口。
+ *
+ * 维护方式：直接修改本文件；`scripts/build-tokens.ts` 会解析 light/dark 声明，
+ * 生成 Playbook/文档使用的 *.tokens.ts 元数据并执行校验。
+ *
+ * 元数据约定（可选）：在 token 声明前添加 `@usage xxx` / `@category text` 元数据注释，
+ * 未声明时构建脚本会按 token 名称推断 category，并生成兜底 usage。
+ */
+:root,
+body[data-vscode-theme-name="IDE Light"] {
+  --wb-todo-menu-bg-hover: var(--wb-palette-gray-4);
+  --wb-todo-menu-bg-active: var(--wb-palette-gray-5);
+  --wb-todo-menu-icon-default: var(--wb-palette-black-70);
+  --wb-todo-menu-text-default: var(--wb-palette-black-90);
+  --wb-todo-menu-text-heading: var(--wb-palette-black-30);
+  --wb-todo-menu-text-view-more: var(--wb-palette-black-50);
+  --wb-button-primary-bg: var(--wb-palette-black-90);
+  --wb-button-primary-bg-hover: color-mix(in srgb, var(--wb-palette-black-100) 96%, transparent);
+  --wb-button-primary-bg-active: color-mix(in srgb, var(--wb-palette-black-100) 80%, transparent);
+  --wb-button-primary-bg-disabled: color-mix(in srgb, var(--wb-palette-black-100) 24%, transparent);
+  --wb-button-primary-fg: var(--wb-palette-white-100);
+  --wb-button-primary-fg-disabled: var(--wb-palette-white-60);
+  --wb-button-secondary-bg: var(--wb-palette-white-100);
+  --wb-button-secondary-bg-hover: color-mix(in srgb, var(--wb-palette-black-100) 4%, transparent);
+  --wb-button-secondary-bg-active: color-mix(in srgb, var(--wb-palette-black-100) 8%, transparent);
+  --wb-button-secondary-bg-disabled: var(--wb-palette-white-100);
+  --wb-button-secondary-fg: color-mix(in srgb, var(--wb-palette-black-100) 96%, transparent);
+  --wb-button-secondary-fg-disabled: color-mix(in srgb, var(--wb-palette-black-100) 24%, transparent);
+  --wb-button-secondary-border: color-mix(in srgb, var(--wb-palette-black-100) 12%, transparent);
+  --wb-button-grey-bg: color-mix(in srgb, var(--wb-palette-black-100) 4%, transparent);
+  --wb-button-grey-bg-hover: color-mix(in srgb, var(--wb-palette-black-100) 8%, transparent);
+  --wb-button-grey-bg-active: color-mix(in srgb, var(--wb-palette-black-100) 12%, transparent);
+  --wb-button-grey-bg-disabled: color-mix(in srgb, var(--wb-palette-black-100) 4%, transparent);
+  --wb-button-grey-fg: color-mix(in srgb, var(--wb-palette-black-100) 96%, transparent);
+  --wb-button-grey-fg-disabled: color-mix(in srgb, var(--wb-palette-black-100) 24%, transparent);
+  --wb-button-ghost-bg: transparent;
+  --wb-button-ghost-bg-hover: color-mix(in srgb, var(--wb-palette-black-100) 5%, transparent);
+  --wb-button-ghost-bg-active: color-mix(in srgb, var(--wb-palette-black-100) 8%, transparent);
+  --wb-button-ghost-fg: color-mix(in srgb, var(--wb-palette-black-100) 96%, transparent);
+  --wb-button-ghost-fg-disabled: color-mix(in srgb, var(--wb-palette-black-100) 24%, transparent);
+  --wb-button-danger-bg: var(--wb-palette-red-8);
+  --wb-button-danger-bg-hover: var(--wb-palette-red-7);
+  --wb-button-danger-bg-active: var(--wb-palette-red-9);
+  --wb-button-danger-bg-disabled: var(--wb-palette-red-3);
+  --wb-button-danger-fg-on-solid: var(--wb-palette-white-100);
+  --wb-button-danger-fg-on-solid-disabled: var(--wb-palette-white-60);
+  --wb-button-danger-fg: var(--wb-palette-red-8);
+  --wb-button-danger-fg-disabled: var(--wb-palette-red-3);
+  --wb-button-danger-border: var(--wb-palette-red-8);
+  --wb-button-danger-border-disabled: var(--wb-palette-red-3);
+  --wb-button-danger-bg-soft-hover: color-mix(in srgb, var(--wb-color-text-error-default) 8%, transparent);
+  --wb-button-danger-bg-soft-active: color-mix(in srgb, var(--wb-color-text-error-default) 16%, transparent);
+  --wb-icon-strong: color-mix(in srgb, var(--wb-palette-black-100) 96%, transparent);
+  --wb-icon-primary: var(--wb-palette-black-90);
+  --wb-icon-secondary: var(--wb-palette-black-70);
+  --wb-icon-medium: var(--wb-palette-black-70);
+  --wb-icon-tertiary: var(--wb-palette-black-50);
+  --wb-icon-muted: var(--wb-palette-black-30);
+  --wb-status-success: var(--wb-palette-green-8);
+  --wb-status-warning: var(--wb-palette-orange-8);
+  --wb-status-error: var(--wb-palette-red-8);
+  --wb-status-info: var(--wb-palette-brand-8);
+  --wb-status-warning-soft: var(--wb-palette-orange-1);
+  --wb-status-error-soft: var(--wb-palette-red-1);
+  --wb-sidebar-bg: var(--wb-color-bg-primary-default);
+  --wb-sidebar-border: var(--wb-color-bg-primary-hover);
+  --wb-sidebar-mask-end: var(--wb-sidebar-bg);
+  --wb-text-version-badge: var(--wb-palette-black-20);
+  --wb-text-enterprise: var(--wb-color-text-warning-default);
+  --wb-scrollbar-thumb: var(--wb-palette-black-20);
+  --wb-scrollbar-thumb-hover: var(--wb-palette-black-30);
+  --wb-badge-warning-bg: var(--wb-status-warning-soft);
+  --wb-badge-warning-fg: var(--wb-color-text-warning-default);
+  --wb-badge-success-bg: var(--wb-palette-green-1);
+  --wb-badge-success-fg: var(--wb-color-text-success-active);
+  --wb-accent-unread: var(--wb-palette-brand-8);
+  --wb-bg-pill-active: rgba(0, 0, 0, 0.75);
+  --wb-bg-pill-active-hover: rgba(0, 0, 0, 0.82);
+  --wb-bg-pill-hover: #fafafa;
+  --wb-task-starter-trigger-bg-hover: #ebebeb;
+  --wb-quick-action-item-bg-hover: #ebebeb;
+  --wb-quick-action-item-border-hover: #e5e5e5;
+  --wb-border-drag-indicator: var(--wb-palette-brand-8);
+}
+
+[data-theme=dark],
+body[data-vscode-theme-name="IDE Night"],
+body.vscode-dark,
+.vscode-dark,
+body.dark,
+.dark {
+  --wb-todo-menu-bg-hover: color-mix(in srgb, var(--wb-palette-white-100) 8%, transparent);
+  --wb-todo-menu-bg-active: color-mix(in srgb, var(--wb-palette-white-100) 12%, transparent);
+  --wb-todo-menu-icon-default: var(--wb-palette-white-70);
+  --wb-todo-menu-text-default: var(--wb-palette-white-90);
+  --wb-todo-menu-text-heading: var(--wb-palette-white-40);
+  --wb-todo-menu-text-view-more: var(--wb-palette-white-50);
+  --wb-button-primary-bg: var(--wb-palette-white-100);
+  --wb-button-primary-bg-hover: color-mix(in srgb, var(--wb-palette-white-100) 88%, transparent);
+  --wb-button-primary-bg-active: color-mix(in srgb, var(--wb-palette-white-100) 72%, transparent);
+  --wb-button-primary-bg-disabled: color-mix(in srgb, var(--wb-palette-white-100) 24%, transparent);
+  --wb-button-primary-fg: var(--wb-palette-black-90);
+  --wb-button-primary-fg-disabled: rgba(0, 0, 0, 0.45);
+  --wb-button-secondary-bg: var(--wb-color-bg-primary-default);
+  --wb-button-secondary-bg-hover: var(--wb-color-bg-primary-hover);
+  --wb-button-secondary-bg-active: var(--wb-color-bg-primary-active);
+  --wb-button-secondary-bg-disabled: var(--wb-color-bg-primary-default);
+  --wb-button-secondary-fg: var(--wb-color-text-primary);
+  --wb-button-secondary-fg-disabled: var(--wb-color-text-disabled);
+  --wb-button-secondary-border: var(--wb-color-border-secondary);
+  --wb-button-grey-bg: color-mix(in srgb, var(--wb-palette-white-100) 6%, transparent);
+  --wb-button-grey-bg-hover: var(--wb-palette-white-10);
+  --wb-button-grey-bg-active: color-mix(in srgb, var(--wb-palette-white-100) 14%, transparent);
+  --wb-button-grey-bg-disabled: color-mix(in srgb, var(--wb-palette-white-100) 4%, transparent);
+  --wb-button-grey-fg: color-mix(in srgb, var(--wb-palette-white-100) 96%, transparent);
+  --wb-button-grey-fg-disabled: color-mix(in srgb, var(--wb-palette-white-100) 24%, transparent);
+  --wb-button-ghost-bg: transparent;
+  --wb-button-ghost-bg-hover: color-mix(in srgb, var(--wb-palette-white-100) 6%, transparent);
+  --wb-button-ghost-bg-active: var(--wb-palette-white-10);
+  --wb-button-ghost-fg: color-mix(in srgb, var(--wb-palette-white-100) 96%, transparent);
+  --wb-button-ghost-fg-disabled: color-mix(in srgb, var(--wb-palette-white-100) 24%, transparent);
+  --wb-button-danger-bg: var(--wb-color-text-error-default);
+  --wb-button-danger-bg-hover: var(--wb-color-text-error-hover);
+  --wb-button-danger-bg-active: var(--wb-color-text-error-active);
+  --wb-button-danger-bg-disabled: var(--wb-color-text-error-disabled);
+  --wb-button-danger-fg-on-solid: var(--wb-palette-white-100);
+  --wb-button-danger-fg-on-solid-disabled: var(--wb-palette-white-60);
+  --wb-button-danger-fg: var(--wb-color-text-error-default);
+  --wb-button-danger-fg-disabled: var(--wb-color-text-error-disabled);
+  --wb-button-danger-border: var(--wb-color-text-error-default);
+  --wb-button-danger-border-disabled: var(--wb-color-text-error-disabled);
+  --wb-button-danger-bg-soft-hover: color-mix(in srgb, var(--wb-color-text-error-default) 12%, transparent);
+  --wb-button-danger-bg-soft-active: color-mix(in srgb, var(--wb-color-text-error-default) 20%, transparent);
+  --wb-icon-strong: color-mix(in srgb, var(--wb-palette-black-100) 96%, transparent);
+  --wb-icon-primary: var(--wb-palette-white-90);
+  --wb-icon-secondary: var(--wb-palette-white-70);
+  --wb-icon-medium: var(--wb-palette-white-70);
+  --wb-icon-tertiary: var(--wb-palette-white-50);
+  --wb-icon-muted: var(--wb-palette-white-30);
+  --wb-status-success: var(--wb-color-text-success-default);
+  --wb-status-warning: var(--wb-color-text-warning-default);
+  --wb-status-error: var(--wb-color-text-error-default);
+  --wb-status-info: var(--wb-color-text-brand-default);
+  --wb-status-warning-soft: color-mix(in srgb, var(--wb-color-text-warning-default) 18%, transparent);
+  --wb-status-error-soft: color-mix(in srgb, var(--wb-color-text-error-default) 18%, transparent);
+  --wb-sidebar-bg: var(--wb-palette-gray-3);
+  --wb-sidebar-border: var(--wb-palette-gray-5);
+  --wb-sidebar-mask-end: var(--wb-sidebar-bg);
+  --wb-text-version-badge: var(--wb-palette-white-20);
+  --wb-text-enterprise: var(--wb-color-text-warning-hover);
+  --wb-scrollbar-thumb: var(--wb-palette-white-20);
+  --wb-scrollbar-thumb-hover: var(--wb-palette-white-30);
+  --wb-badge-warning-bg: var(--wb-status-warning-soft);
+  --wb-badge-warning-fg: var(--wb-color-text-warning-hover);
+  --wb-badge-success-bg: color-mix(in srgb, var(--wb-color-text-success-default) 18%, transparent);
+  --wb-badge-success-fg: var(--wb-color-text-success-hover);
+  --wb-accent-unread: var(--wb-color-text-brand-default);
+  --wb-bg-pill-active: rgba(255, 255, 255, 0.18);
+  --wb-bg-pill-active-hover: rgba(255, 255, 255, 0.22);
+  --wb-bg-pill-hover: rgba(255, 255, 255, 0.06);
+  --wb-task-starter-trigger-bg-hover: rgba(255, 255, 255, 0.06);
+  --wb-quick-action-item-bg-hover: rgba(255, 255, 255, 0.14);
+  --wb-quick-action-item-border-hover: rgba(255, 255, 255, 0.08);
+  --wb-border-drag-indicator: var(--wb-color-text-brand-default);
+}
+
+/**
+ * WB Spacing —— SCSS 真源与运行时入口。
+ *
+ * 维护方式：直接修改本文件；`scripts/build-tokens.ts` 会解析 :root 声明，
+ * 生成 Playbook/文档使用的对应 *.tokens.ts 元数据并执行校验。
+ *
+ * 元数据约定（可选）：在 token 声明前添加 `@usage xxx` 元数据注释。
+ */
+/* WB Spacing */
+:root {
+  --wb-spacing-0: 0;
+  --wb-spacing-1: 2px;
+  --wb-spacing-2: 4px;
+  --wb-spacing-2-5: 5px;
+  --wb-spacing-3: 8px;
+  --wb-spacing-4: 12px;
+  --wb-spacing-5: 16px;
+  --wb-spacing-6: 20px;
+  --wb-spacing-7: 24px;
+  --wb-spacing-8: 32px;
+  --wb-spacing-9: 40px;
+  --wb-spacing-10: 48px;
+  --wb-spacing-12: 64px;
+}
+
+/**
+ * WB Radius —— SCSS 真源与运行时入口。
+ *
+ * 维护方式：直接修改本文件；`scripts/build-tokens.ts` 会解析 :root 声明，
+ * 生成 Playbook/文档使用的对应 *.tokens.ts 元数据并执行校验。
+ *
+ * 元数据约定（可选）：在 token 声明前添加 `@usage xxx` 元数据注释。
+ */
+/* WB Radius */
+:root {
+  --wb-radius-none: 0;
+  --wb-radius-xs: 2px;
+  --wb-radius-sm: 4px;
+  --wb-radius-md: 6px;
+  --wb-radius-lg: 8px;
+  --wb-radius-xl: 12px;
+  --wb-radius-2xl: 16px;
+  --wb-radius-full: 9999px;
+}
+
+/**
+ * WB Typography —— SCSS 真源与运行时入口。
+ *
+ * 维护方式：直接修改本文件；`scripts/build-tokens.ts` 会解析 :root 声明，
+ * 生成 Playbook/文档使用的对应 *.tokens.ts 元数据并执行校验。
+ *
+ * 元数据约定（可选）：在 token 声明前添加 `@usage xxx` 元数据注释。
+ */
+/* WB Typography */
+:root {
+  --wb-font-code-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --wb-font-mono: var(--wb-font-code-family);
+  --wb-font-display-size: 32px;
+  --wb-font-display-line-height: 40px;
+  --wb-font-display-weight: 700;
+  --wb-font-h1-size: 24px;
+  --wb-font-h1-line-height: 32px;
+  --wb-font-h1-weight: 600;
+  --wb-font-h2-size: 20px;
+  --wb-font-h2-line-height: 28px;
+  --wb-font-h2-weight: 600;
+  --wb-font-h3-size: 16px;
+  --wb-font-h3-line-height: 24px;
+  --wb-font-h3-weight: 600;
+  --wb-font-body-size: 14px;
+  --wb-font-body-line-height: 22px;
+  --wb-font-body-weight: 400;
+  --wb-font-body-strong-size: 14px;
+  --wb-font-body-strong-line-height: 22px;
+  --wb-font-body-strong-weight: 600;
+  --wb-font-caption-size: 12px;
+  --wb-font-caption-line-height: 18px;
+  --wb-font-caption-weight: 400;
+  --wb-font-code-size: 13px;
+  --wb-font-code-line-height: 20px;
+  --wb-font-code-weight: 400;
+}
+
+/**
+ * WB Shadows —— SCSS 真源与运行时入口。
+ *
+ * 维护方式：直接修改本文件；`scripts/build-tokens.ts` 会解析 :root 声明，
+ * 生成 Playbook/文档使用的对应 *.tokens.ts 元数据并执行校验。
+ *
+ * 元数据约定（可选）：在 token 声明前添加 `@usage xxx` 元数据注释。
+ */
+/* WB Shadows */
+:root {
+  --wb-shadow-none: none;
+  --wb-shadow-sm: 0 1px 2px color-mix(in srgb, var(--wb-palette-black-100) 8%, transparent);
+  --wb-shadow-md: 0 2px 8px color-mix(in srgb, var(--wb-palette-black-100) 12%, transparent);
+  --wb-shadow-lg: 0 4px 16px color-mix(in srgb, var(--wb-palette-black-100) 16%, transparent);
+  --wb-shadow-xl: 0 8px 32px color-mix(in srgb, var(--wb-palette-black-100) 20%, transparent);
+  --wb-shadow-popover: 0 4px 12px -4px color-mix(in srgb, var(--wb-palette-black-100) 4%, transparent), 0 3px 6px -8px color-mix(in srgb, var(--wb-palette-black-100) 4%, transparent);
+  --wb-shadow-input: 0 12px 24px -8px color-mix(in srgb, var(--wb-palette-black-100) 2%, transparent), 0 2px 4px -4px color-mix(in srgb, var(--wb-palette-black-100) 2%, transparent);
+}
+
+/**
+ * WB Motion —— SCSS 真源与运行时入口。
+ *
+ * 维护方式：直接修改本文件；`scripts/build-tokens.ts` 会解析 :root 声明，
+ * 生成 Playbook/文档使用的对应 *.tokens.ts 元数据并执行校验。
+ *
+ * 元数据约定（可选）：在 token 声明前添加 `@usage xxx` 元数据注释。
+ */
+/* WB Motion */
+:root {
+  --wb-motion-duration-fast: 120ms;
+  --wb-motion-duration-sm: 150ms;
+  --wb-motion-duration-base: 200ms;
+  --wb-motion-duration-slow: 320ms;
+  --wb-motion-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --wb-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/**
+ * WB Sizes —— SCSS 真源与运行时入口。
+ *
+ * 维护方式：直接修改本文件；`scripts/build-tokens.ts` 会解析 :root 声明，
+ * 生成 Playbook/文档使用的对应 *.tokens.ts 元数据并执行校验。
+ *
+ * 元数据约定（可选）：在 token 声明前添加 `@usage xxx` 元数据注释。
+ */
+/* WB Sizes */
+:root {
+  --wb-size-control-sm: 24px;
+  --wb-size-control-md: 32px;
+  --wb-size-control-lg: 40px;
+  --wb-icon-size-sm: 12px;
+  --wb-icon-size-md: 16px;
+  --wb-icon-size-lg: 20px;
+  --wb-icon-size-xl: 24px;
+}
+
+/**
+ * WB Z-Index —— SCSS 真源与运行时入口。
+ *
+ * 维护方式：直接修改本文件；`scripts/build-tokens.ts` 会解析 :root 声明，
+ * 生成 Playbook/文档使用的对应 *.tokens.ts 元数据并执行校验。
+ *
+ * 元数据约定（可选）：在 token 声明前添加 `@usage xxx` 元数据注释。
+ */
+/* WB Z-Index */
+:root {
+  --wb-colleagues-layer-chat-float: 900;
+  --wb-colleagues-layer-chat-menu: 2;
+  --wb-colleagues-layer-dialog: 1200;
+  --wb-colleagues-layer-dialog-popover: 1205;
+  --wb-colleagues-layer-dialog-local-modal: 1208;
+  --wb-colleagues-layer-dialog-hire: 1210;
+  --wb-colleagues-layer-dialog-tdocs: 1220;
+  --wb-colleagues-layer-dialog-bind-channel: 1230;
+  --wb-colleagues-layer-dialog-publish: 1240;
+  --wb-colleagues-layer-promo: 1400;
+  --wb-colleagues-layer-promo-loading: 1410;
+  --wb-colleagues-layer-confirm: 1500;
+  --wb-colleagues-layer-confirm-top: 1600;
+}

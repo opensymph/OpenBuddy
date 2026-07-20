@@ -1,0 +1,508 @@
+import { useEffect, useRef, useState } from "react";
+import { TitleBar } from "./components/TitleBar";
+import { Sidebar } from "./components/Sidebar";
+import { HomePage } from "./components/HomePage";
+import { ChatView } from "./components/ChatView";
+import { PlaceholderPage } from "./components/PlaceholderPage";
+import { Toast } from "./components/Toast";
+import { PermissionDialog } from "./components/PermissionDialog";
+import { ThemeProvider } from "./components/ThemeProvider";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { SearchOverlay } from "./components/SearchOverlay";
+import { AboutDialog } from "./components/AboutDialog";
+import { FolderTrustDialog } from "./components/FolderTrustDialog";
+import { TasksPanel } from "./components/TasksPanel";
+import type { ModelOption } from "./components/ModelSelector";
+import { useSessionStore } from "./stores/session-store";
+import { useSessionsStore } from "./stores/sessions-store";
+import { usePermissionStore } from "./stores/permission-store";
+import {
+  grokInit,
+  grokNewSession,
+  grokSend,
+  grokCancel,
+  grokLoadSession,
+  grokListSessions,
+  grokListWorkspaces,
+  grokSetModel,
+  providersList,
+  notificationAppend,
+  subscribeGrokEvents,
+  type InitResult,
+  type WorkspaceInfo,
+} from "./lib/grok-client";
+import type { AgentEntry } from "./lib/types";
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <Shell />
+    </ThemeProvider>
+  );
+}
+
+function Shell() {
+  const [init, setInit] = useState<InitResult | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [trustRequest, setTrustRequest] = useState<{ cwd?: string; reason?: string } | null>(null);
+  const [taskRefreshSignal, setTaskRefreshSignal] = useState(0);
+  const [placeholderView, setPlaceholderView] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [currentModelId, setCurrentModelId] = useState<string | undefined>(undefined);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cwdRef = useRef<string>("");
+
+  const sessionStore = useSessionStore;
+  const sessionsStore = useSessionsStore;
+  const permissionStore = usePermissionStore;
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const result = await grokInit();
+        cwdRef.current = result.cwd;
+        sessionsStore.getState().setCwd(result.cwd);
+        setInit(result);
+        setCurrentModelId(result.defaultModelId);
+
+        unlisten = await subscribeGrokEvents({
+          onUpdate: (u) => {
+            console.log('[OpenBuddy] Received grok://update:', u);
+            sessionStore.getState().applyUpdate(u);
+          },
+          onPermission: (p) => {
+            console.log('[OpenBuddy] Received grok://permission:', p);
+            permissionStore.getState().request(p);
+            void notificationAppend(
+              "permission",
+              p.options?.[0]?.title ?? "工具执行权限请求",
+              undefined,
+              p.sessionId,
+              "warn",
+            );
+          },
+          onComplete: (p) => {
+            console.log('[OpenBuddy] Received grok://complete:', p);
+            // Ignore completes for side-channel sessions (inspiration generation)
+            // — they're handled by their own listeners, not the main transcript.
+            const currentSessionId = sessionStore.getState().sessionId;
+            if (currentSessionId && p.sessionId && p.sessionId !== currentSessionId) {
+              return;
+            }
+            sessionStore.getState().markComplete(p);
+            void notificationAppend(
+              "session_complete",
+              `会话完成（${p.stopReason ?? "end_turn"}）`,
+              undefined,
+              p.sessionId,
+              "info",
+            );
+          },
+          onSummary: ({ sessionId, title }) => {
+            // grok generated (or we renamed) a session title — update the
+            // sidebar entry in place. This overrides the "新会话" placeholder
+            // set optimistically in handleSendNew.
+            sessionsStore.getState().upsert({ sessionId, title });
+            void notificationAppend(
+              "summary",
+              `生成会话标题：${title}`,
+              undefined,
+              sessionId,
+              "info",
+            );
+          },
+          onFolderTrust: (p) => {
+            // grok asks the user to trust a folder before running tools.
+            const req = (p ?? {}) as { cwd?: string; reason?: string };
+            setTrustRequest({ cwd: req.cwd, reason: req.reason });
+            void notificationAppend(
+              "folder_trust",
+              `请求信任文件夹：${req.cwd ?? "(unknown)"}`,
+              req.reason,
+              undefined,
+              "warn",
+            );
+          },
+          onPlanMode: (p) => {
+            // Plan mode toggled (by us or by grok). Mirror into the session store.
+            const payload = (p ?? {}) as { enabled?: boolean };
+            if (typeof payload.enabled === "boolean") {
+              sessionStore.getState().setPlanMode(payload.enabled);
+              void notificationAppend(
+                "plan_mode",
+                payload.enabled ? "进入计划模式" : "退出计划模式",
+                undefined,
+                undefined,
+                "info",
+              );
+            }
+          },
+          onMcpStatus: (p) => {
+            void notificationAppend(
+              "mcp_status",
+              "MCP 连接器状态变化",
+              typeof p === "string" ? p : JSON.stringify(p).slice(0, 200),
+              undefined,
+              "info",
+            );
+          },
+          onModelsUpdate: (p) => {
+            void notificationAppend(
+              "models_update",
+              "模型列表已更新",
+              typeof p === "string" ? p : JSON.stringify(p).slice(0, 200),
+              undefined,
+              "info",
+            );
+          },
+          onTaskUpdate: () => {
+            // A background task changed state — bump the signal so TasksPanel refreshes.
+            setTaskRefreshSignal((n) => n + 1);
+            void notificationAppend(
+              "task_update",
+              "后台任务状态变化",
+              undefined,
+              undefined,
+              "info",
+            );
+          },
+        });
+
+        const list = await grokListSessions(result.cwd);
+        sessionsStore.getState().set(list);
+
+        // Load the model list (from config.toml [model.*]) for the picker.
+        // Each provider becomes one ModelOption; the id is the grok routing slug.
+        const providers = await providersList();
+        const providerOptions = providers.map((p) => ({ id: p.modelId, label: p.name || p.modelId }));
+        setModels(providerOptions);
+
+        // IMPORTANT: grok's initialize response reports `currentModelId` from
+        // its internal catalog, which defaults to `grok-build` (the built-in
+        // bundled model) when the user's configured custom model (e.g. glm-5
+        // via a BYOK [model.*] entry) isn't recognized as a catalog entry.
+        // If we trust grok's default blindly, every prompt goes out with
+        // modelId="grok-build" and gets rejected by the user's provider
+        // (which only knows their custom model id). So: when the user has
+        // configured at least one BYOK provider, prefer the first one over
+        // grok's reported default. This matches the "set [models] default"
+        // intent and makes the out-of-box BYOK experience work.
+        if (providerOptions.length > 0) {
+          const grokDefault = result.defaultModelId;
+          const grokDefaultIsKnownProvider = providerOptions.some(
+            (p) => p.id === grokDefault,
+          );
+          if (!grokDefaultIsKnownProvider) {
+            // grok's default (likely "grok-build") isn't in our provider list —
+            // fall back to the first configured provider so prompts actually
+            // reach the user's endpoint.
+            setCurrentModelId(providerOptions[0].id);
+          }
+        }
+
+        // Load the workspace list for the workspace picker.
+        const ws = await grokListWorkspaces();
+        setWorkspaces(ws);
+      } catch (e) {
+        setInitError(String(e));
+      }
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [sessionStore, sessionsStore, permissionStore]);
+
+  const currentSessionId = sessionsStore((s) => s.currentSessionId);
+  const streaming = sessionStore((s) => s.streaming);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2000);
+  };
+  const handlePlaceholder = (label: string) => {
+    // Route a few sidebar shortcut buttons to real panels instead of toasts.
+    if (label === "筛选") {
+      setSearchOpen(true);
+      return;
+    }
+    if (label === "用户中心") {
+      setSettingsOpen(true);
+      return;
+    }
+    if (label === "通知") {
+      // Open the settings → 智能体邮箱（会话通知中心）tab where all grok
+      // events are logged.
+      setSettingsOpen(true);
+      return;
+    }
+    showToast(`${label} 即将上线`);
+  };
+  const handleNavigate = (label: string) => {
+    setPlaceholderView(label);
+    sessionsStore.getState().setCurrent(null);
+    sessionStore.getState().reset();
+  };
+
+  const handleSendNew = async (text: string) => {
+    console.log('[OpenBuddy] handleSendNew called with:', text);
+    try {
+      const cwd = cwdRef.current;
+      console.log('[OpenBuddy] Creating new session with cwd:', cwd, 'modelId:', currentModelId);
+      const sessionId = await grokNewSession(cwd, currentModelId);
+      console.log('[OpenBuddy] New session created:', sessionId);
+      sessionsStore.getState().setCurrent(sessionId);
+      // Placeholder title — grok will push the LLM-generated title via the
+      // grok://summary event (SessionSummaryGenerated) within a few seconds,
+      // which our onSummary handler applies to the same store entry.
+      sessionsStore.getState().upsert({ sessionId, title: "新会话", cwd });
+      sessionStore.getState().setSession(sessionId);
+      sessionStore.getState().pushUser(text);
+      sessionStore.getState().startStreaming();
+      console.log('[OpenBuddy] Sending prompt to grok...');
+      await grokSend(sessionId, text);
+      console.log('[OpenBuddy] Prompt sent successfully, waiting for events...');
+    } catch (e) {
+      console.error('[OpenBuddy] handleSendNew error:', e);
+      sessionStore.getState().setError(String(e));
+    }
+  };
+
+  const handleSendCurrent = async (text: string) => {
+    if (!currentSessionId) return handleSendNew(text);
+    try {
+      sessionStore.getState().pushUser(text);
+      sessionStore.getState().startStreaming();
+      await grokSend(currentSessionId, text);
+    } catch (e) {
+      sessionStore.getState().setError(String(e));
+    }
+  };
+
+  const handleCancel = async () => {
+    if (currentSessionId) {
+      try {
+        await grokCancel(currentSessionId);
+      } catch (e) {
+        sessionStore.getState().setError(String(e));
+      }
+    }
+  };
+
+  // Model picker: switch the current session's model via grok's set_model.
+  // If there's no session yet, we just remember the choice and apply it in
+  // handleSendNew when the session is created.
+  const handleModelChange = async (modelId: string) => {
+    setCurrentModelId(modelId);
+    if (currentSessionId) {
+      try {
+        await grokSetModel(currentSessionId, modelId);
+      } catch (e) {
+        // grok rejects with MODEL_SWITCH_INCOMPATIBLE_AGENT when the session
+        // has turns and the new model needs a different harness — suggest a
+        // new session.
+        const msg = String(e);
+        showToast(
+          /incompatible|start_new_session/i.test(msg)
+            ? "该会话无法切换到此模型，请新建会话"
+            : `模型切换失败：${msg}`
+        );
+      }
+    }
+  };
+
+  // Workspace picker: switch the active cwd. ACP locks cwd per-session, so
+  // this doesn't migrate the current session — it just changes where the
+  // NEXT new session will live, and refreshes the sidebar list. We also drop
+  // the current transcript since it belonged to the old workspace.
+  const handleSelectWorkspace = async (newCwd: string) => {
+    if (newCwd === cwdRef.current) return;
+    cwdRef.current = newCwd;
+    sessionsStore.getState().setCwd(newCwd);
+    sessionsStore.getState().setCurrent(null);
+    sessionStore.getState().reset();
+    setPlaceholderView(null);
+    try {
+      const list = await grokListSessions(newCwd);
+      sessionsStore.getState().set(list);
+    } catch (e) {
+      showToast(`加载工作空间失败：${String(e)}`);
+    }
+  };
+
+  const handleNewSession = () => {
+    setPlaceholderView(null);
+    sessionsStore.getState().setCurrent(null);
+    sessionStore.getState().reset();
+  };
+
+  const handleSelectSession = async (sessionId: string, sessionCwd?: string) => {
+    setPlaceholderView(null);
+    // If the hit is from another workspace, switch first so the load succeeds.
+    if (sessionCwd && sessionCwd !== cwdRef.current) {
+      await handleSelectWorkspace(sessionCwd);
+    }
+    sessionsStore.getState().setCurrent(sessionId);
+    // Clear the transcript before load: grok replays the persisted history as
+    // a fresh stream of SessionUpdate messages, which our grok://update
+    // listener funnels into the store. If we don't reset first, the replayed
+    // messages get appended to whatever was already on screen.
+    sessionStore.getState().setSession(sessionId);
+    try {
+      await grokLoadSession(sessionId, cwdRef.current);
+    } catch (e) {
+      sessionStore.getState().setError(String(e));
+    }
+  };
+
+  // Start a new chat guided by an expert/assistant. grok has no session-level
+  // "switch agent" ACP method, so we open a fresh empty session and seed it
+  // with a one-shot system-style preamble built from the agent's description.
+  // The user can then type their actual task; grok will honor the framing.
+  const handleStartWithExpert = async (agent: AgentEntry) => {
+    setPlaceholderView(null);
+    try {
+      const cwd = cwdRef.current;
+      const sessionId = await grokNewSession(cwd, currentModelId);
+      sessionsStore.getState().setCurrent(sessionId);
+      sessionsStore.getState().upsert({ sessionId, title: agent.name, cwd });
+      sessionStore.getState().setSession(sessionId);
+      // Send a quiet preamble so grok adopts the agent's persona for this turn.
+      // We don't display it as a user bubble — it's scaffolding. The simplest
+      // implementation is to prepend it to the user's first real message; we
+      // achieve that here by pushing a non-streaming seed and letting the user
+      // continue. (If grok had a session-level systemPrompt meta field we'd
+      // use that instead.)
+      const preamble =
+        `（本次对话使用助理「${agent.name}」：${agent.description ?? "通用助理"}）`;
+      sessionStore.getState().pushUser(preamble);
+      sessionStore.getState().startStreaming();
+      await grokSend(sessionId, preamble);
+    } catch (e) {
+      sessionStore.getState().setError(String(e));
+      showToast(`启动助理失败：${String(e).replace(/^Error:\s*/, "")}`);
+    }
+  };
+
+  // Discover launcher: open a new session and send the wizard's prompt. If an
+  // agent is chosen, prepend its persona as a preamble (same pattern as
+  // handleStartWithExpert). Closes the placeholder view so the chat shows.
+  const handleLaunchDiscover = async (prompt: string, agent?: AgentEntry) => {
+    setPlaceholderView(null);
+    try {
+      const cwd = cwdRef.current;
+      const sessionId = await grokNewSession(cwd, currentModelId);
+      sessionsStore.getState().setCurrent(sessionId);
+      sessionsStore.getState().upsert({
+        sessionId,
+        title: agent ? agent.name : prompt.slice(0, 30),
+        cwd,
+      });
+      sessionStore.getState().setSession(sessionId);
+      const body = agent
+        ? `（使用助理「${agent.name}」：${agent.description ?? ""}）\n\n${prompt}`
+        : prompt;
+      sessionStore.getState().pushUser(body);
+      sessionStore.getState().startStreaming();
+      await grokSend(sessionId, body);
+    } catch (e) {
+      sessionStore.getState().setError(String(e));
+      showToast(`启动失败：${String(e).replace(/^Error:\s*/, "")}`);
+    }
+  };
+
+  const activeNav = placeholderView ?? (currentSessionId ? "" : "新建任务");
+
+  return (
+    <div className="app">
+      <TitleBar onPlaceholder={handlePlaceholder} onShowAbout={() => setAboutOpen(true)} />
+      <div className="app__body">
+        <Sidebar
+          onNewSession={handleNewSession}
+          onSelect={handleSelectSession}
+          onNavigate={handleNavigate}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSearch={() => setSearchOpen(true)}
+          onPlaceholder={handlePlaceholder}
+          onToast={showToast}
+          activeNav={activeNav}
+        />
+        <main className="app__main">
+          {initError ? (
+            <div className="app__notice app__notice--err">
+              初始化失败:{initError}
+              <br />
+              请确认已在终端运行 <code>grok login</code> 完成 grok 登录后重试。
+            </div>
+          ) : !init ? (
+            <div className="app__notice">正在启动 grok agent…</div>
+          ) : !init.ok ? (
+            <div className="app__notice app__notice--err">
+              grok 未就绪:{init.auth.reason ?? "未知原因"}
+              <br />
+              请在终端运行 <code>grok login</code> 后重启 OpenBuddy。
+            </div>
+          ) : placeholderView ? (
+            <PlaceholderPage
+              label={placeholderView}
+              onPlaceholder={handlePlaceholder}
+              onStartWithExpert={handleStartWithExpert}
+              onToast={showToast}
+              cwd={cwdRef.current}
+              onSelectWorkspace={handleSelectWorkspace}
+              sessionId={currentSessionId ?? undefined}
+              onLaunch={handleLaunchDiscover}
+            />
+          ) : currentSessionId ? (
+            <ChatView
+              onSend={handleSendCurrent}
+              onCancel={handleCancel}
+              modelId={currentModelId}
+              models={models}
+              onModelChange={handleModelChange}
+              cwd={cwdRef.current}
+              workspaces={workspaces}
+              onSelectWorkspace={handleSelectWorkspace}
+            />
+          ) : (
+            <HomePage
+              onSend={handleSendNew}
+              streaming={streaming}
+              apiReady={init.auth.ready}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onPlaceholder={handlePlaceholder}
+              modelId={currentModelId}
+              models={models}
+              onModelChange={handleModelChange}
+              cwd={cwdRef.current}
+              workspaces={workspaces}
+              onSelectWorkspace={handleSelectWorkspace}
+            />
+          )}
+        </main>
+      </div>
+      <Toast message={toast} />
+      <PermissionDialog />
+      <SearchOverlay
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelect={handleSelectSession}
+      />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} init={init} />
+      <FolderTrustDialog
+        request={trustRequest}
+        onResolve={() => setTrustRequest(null)}
+        onToast={showToast}
+      />
+      <TasksPanel refreshSignal={taskRefreshSignal} onToast={showToast} />
+    </div>
+  );
+}

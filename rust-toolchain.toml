@@ -1,0 +1,15 @@
+# OpenBuddy toolchain.
+#
+# We pin the msvc host explicitly. grok-build's rust-toolchain.toml pins
+# 1.92.0-gnu, and a half-installed gnu rust-std on this machine breaks
+# `channel = "stable"` (rustup resolves it to stable-gnu and the component
+# download fails with a rename error). Pinning msvc bypasses that entirely.
+#
+# grok's path crates require Rust >= 1.85 (edition 2024); stable msvc
+# satisfies this. They are compiled by THIS toolchain, so they build under
+# msvc regardless of grok-build's gnu pin (grok-build/target can't be reused,
+# one fresh compile is the accepted cost).
+[toolchain]
+channel = "stable-x86_64-pc-windows-msvc"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

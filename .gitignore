@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+
+# Build output
+dist/
+dist-ssr/
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/Cargo.lock
+src-tauri/gen/schemas/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.local
+*.log
+
+# Tauri dev / build artifacts
+*.tsbuildinfo
+
+# Local debugging / inspection artifacts
+.cdp-inspect/
+.workbuddy-ref/
+.zcode/plans/
+nul
+test-grok-connection.mjs
+
+# One-off debugging / inspection scripts under scripts/
+scripts/check-*.js
+scripts/debug-*.js
+scripts/deep-dom-check.js
+scripts/detailed-dom-check.js
+scripts/direct-check.js
+scripts/dom-only-check.js
+scripts/final-check.js
+scripts/get-*.js
+scripts/inspect-*.js
+scripts/quick-test.js
+scripts/simple-*.js
+scripts/test-*.js
+scripts/compare-dom-structure.js
+scripts/cdp-audit.py

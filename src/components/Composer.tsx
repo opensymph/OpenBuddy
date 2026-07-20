@@ -1,0 +1,426 @@
+import { useEffect, useRef, useState } from "react";
+import { Mic, X } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { AddIcon, ChevronDownIcon, SendPlaneIcon } from "@/foundation/components/Icon/icons";
+import { ModelSelector, type ModelOption } from "./ModelSelector";
+import { WorkspacePicker } from "./WorkspacePicker";
+import { PermissionPicker } from "./PermissionPicker";
+import { SlashCommands } from "./SlashCommands";
+import type { WorkspaceInfo } from "@/lib/grok-client";
+
+/**
+ * WorkBuddy 风格输入卡片(圆角16):左下 +,右下 Auto 下拉/麦克风/发送;
+ * showMeta 时卡片下方显示"选择工作空间/默认权限"。
+ * apiReady=false 时输入禁用,点击卡片引导打开设置。
+ *
+ * 真实功能(取代之前的 onPlaceholder 占位):
+ *  - 模型下拉: ModelSelector, 选中后调 onModelChange
+ *  - 工作空间下拉: WorkspacePicker, 选中后调 onSelectWorkspace
+ *  - "+" 附件: Tauri 文件选择对话框, 选中文件作为 chip 显示, 发送时路径拼进文本
+ */
+export function Composer({
+  streaming,
+  disabled,
+  onSend,
+  onCancel,
+  placeholder,
+  apiReady = true,
+  onOpenSettings,
+  onPlaceholder,
+  onToast,
+  showMeta = false,
+  // Model picker
+  modelId,
+  models,
+  onModelChange,
+  // Workspace picker
+  cwd,
+  workspaces,
+  onSelectWorkspace,
+  // Seed text (from HomePage chips). Consumed once, then cleared via callback.
+  initialText,
+  onInitialTextConsumed,
+}: {
+  streaming: boolean;
+  disabled?: boolean;
+  onSend: (text: string) => void;
+  onCancel: () => void;
+  placeholder?: string;
+  apiReady?: boolean;
+  onOpenSettings?: () => void;
+  onPlaceholder?: (label: string) => void;
+  /** Surface transient feedback (permission rule save errors, etc.). */
+  onToast?: (msg: string) => void;
+  showMeta?: boolean;
+  /** Currently selected model id (shown on the model trigger). */
+  modelId?: string;
+  /** Available models for the picker. */
+  models?: ModelOption[];
+  onModelChange?: (id: string) => void;
+  /** Currently active working directory. */
+  cwd?: string;
+  workspaces?: WorkspaceInfo[];
+  onSelectWorkspace?: (cwd: string) => void;
+  /** Optional initial text to seed the input (one-shot, then cleared). */
+  initialText?: string;
+  onInitialTextConsumed?: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<VoiceRecognition | null>(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }, [text]);
+
+  // One-shot seed: when the parent supplies initialText, fill the textarea and
+  // focus it so the user can immediately edit/send.
+  useEffect(() => {
+    if (initialText !== undefined && initialText !== null) {
+      setText(initialText);
+      setCursorPos(initialText.length);
+      onInitialTextConsumed?.();
+      requestAnimationFrame(() => ref.current?.focus());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialText]);
+
+  // Voice input: use the browser's SpeechRecognition API (Tauri's WebView2/
+  // WKWebView support it on most systems). On languages where the API isn't
+  // exposed (older webviews, no microphone permission), we surface a toast.
+  // grok has a voice crate but doesn't expose it over ACP, so this is the
+  // lightest path that works today.
+  const toggleVoice = () => {
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) {
+      onToast?.("当前环境不支持语音输入（需要 WebView2/WKWebView）");
+      onPlaceholder?.("语音输入");
+      return;
+    }
+    const rec = new Ctor();
+    rec.lang = "zh-CN";
+    rec.interimResults = true;
+    rec.continuous = false;
+    let finalText = "";
+    rec.onresult = (event: SpeechRecognitionEventLike) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const r = event.results[i];
+        if (r.isFinal) finalText += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      setText((prev) => {
+        // Replace the trailing interim segment each time so the user sees
+        // live transcription without duplicating finalized text.
+        const base = finalText || prev;
+        return interim ? base + interim : base;
+      });
+    };
+    rec.onerror = (e: SpeechRecognitionErrorEventLike) => {
+      setListening(false);
+      const msg = e.error === "not-allowed"
+        ? "未授予麦克风权限"
+        : `语音识别错误：${e.error}`;
+      onToast?.(msg);
+    };
+    rec.onend = () => setListening(false);
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+      setListening(true);
+    } catch {
+      onToast?.("无法启动语音识别");
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort?.();
+    };
+  }, []);
+
+  const send = () => {
+    const t = text.trim();
+    // 允许空消息发送，或者需要有附件
+    if (streaming || disabled || !apiReady) {
+      console.log('Send blocked:', { streaming, disabled, apiReady });
+      return;
+    }
+    // Append attachment paths to the prompt text so grok's read_file tool can
+    // pick them up (ACP image/audio needs agent-declared capabilities we
+    // don't model yet; ResourceLink behavior is unverified — text is safest).
+    let body = t;
+    if (attachments.length > 0) {
+      const fileList = attachments.map((p) => `- ${p}`).join("\n");
+      body = body
+        ? `${body}\n\n相关文件:\n${fileList}`
+        : `请查看以下文件:\n${fileList}`;
+    }
+    console.log('Sending:', body || '(empty message)');
+    onSend(body || "你好");
+    setText("");
+    setAttachments([]);
+  };
+
+  const pickFiles = async () => {
+    try {
+      const selected = await openDialog({ multiple: true });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
+      setAttachments((prev) => {
+        const set = new Set(prev);
+        paths.forEach((p) => set.add(p));
+        return [...set];
+      });
+    } catch {
+      // dialog plugin not available in non-Tauri env (vitest) — no-op.
+    }
+  };
+
+  const ph = (label: string) => onPlaceholder?.(label);
+
+  // Cursor tracking for slash-command autocomplete.
+  const [cursorPos, setCursorPos] = useState(0);
+  // Is the user currently typing a "/xxx" command? Drives SlashCommands menu.
+  const wordBeforeCursor = (() => {
+    const before = text.slice(0, cursorPos);
+    const m = before.match(/\/[\w-]*$/);
+    return m ? m[0] : "";
+  })();
+  const slashVisible = wordBeforeCursor.length > 0 && apiReady && !streaming;
+
+  const handleSlashPick = (command: string) => {
+    // Replace the "/xxx" fragment (up to cursor) with the picked command + " ".
+    const before = text.slice(0, cursorPos);
+    const after = text.slice(cursorPos);
+    const newBefore = before.replace(/\/[\w-]*$/, command + " ");
+    const next = newBefore + after;
+    setText(next);
+    const newPos = newBefore.length;
+    setCursorPos(newPos);
+    // Refocus + put caret at the insertion point.
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = newPos;
+    });
+  };
+
+  const showModelPicker = !!onModelChange && !!models;
+  const showWorkspacePicker = !!onSelectWorkspace && !!workspaces;
+
+  return (
+    <div className="wb-composer-wrap">
+      <section
+        className={"wb-composer" + (apiReady ? "" : " wb-composer--disabled")}
+        onClick={() => {
+          if (!apiReady) onOpenSettings?.();
+        }}
+      >
+        {!apiReady && (
+          <div className="wb-composer__setup-hint" role="button" tabIndex={0}>
+            请先配置 API Key 开始使用
+          </div>
+        )}
+
+        {/* Attachment chips */}
+        {attachments.length > 0 && (
+          <div className="composer-attachments">
+            {attachments.map((path) => (
+              <span key={path} className="composer-attachments__chip" title={path}>
+                <span className="composer-attachments__chip-name">
+                  {path.replace(/\\/g, "/").split("/").pop()}
+                </span>
+                <button
+                  type="button"
+                  className="composer-attachments__chip-remove"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAttachments((prev) => prev.filter((p) => p !== path));
+                  }}
+                  aria-label="移除附件"
+                >
+                  <X size={12} strokeWidth={2} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <textarea
+          ref={ref}
+          className="wb-composer__input"
+          rows={1}
+          value={text}
+          disabled={!apiReady}
+          placeholder={
+            apiReady
+              ? placeholder ?? "今天帮你做些什么? @ 引用对话文件,/ 调用技能与指令"
+              : "请先配置 API Key 开始使用"
+          }
+          onChange={(e) => {
+            setText(e.target.value);
+            setCursorPos(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onSelect={(e) =>
+            setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? cursorPos)
+          }
+          onClick={(e) =>
+            setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? cursorPos)
+          }
+          onKeyUp={(e) =>
+            setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? cursorPos)
+          }
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              // If the slash-commands menu is visible, let it handle Enter.
+              if (slashVisible) {
+                return; // SlashCommands handles pick via its own button onClick.
+              }
+              e.preventDefault();
+              send();
+            }
+          }}
+        />
+        {/* Slash-command autocomplete: appears when input starts with /xxx. */}
+        <SlashCommands
+          text={text}
+          cursor={cursorPos}
+          onPick={handleSlashPick}
+        />
+        <div className="wb-composer__footer">
+          <button
+            className="wb-composer__tool"
+            onClick={(e) => {
+              e.stopPropagation();
+              pickFiles();
+            }}
+            aria-label="添加附件"
+            title="添加附件"
+          >
+            <AddIcon size="lg" />
+          </button>
+          <div className="wb-composer__spacer" />
+          {showModelPicker ? (
+            <ModelSelector
+              modelId={modelId}
+              models={models!}
+              onModelChange={onModelChange!}
+            />
+          ) : (
+            <button
+              className="wb-composer__model"
+              onClick={(e) => {
+                e.stopPropagation();
+                ph("模型选择");
+              }}
+            >
+              Auto <ChevronDownIcon size="sm" />
+            </button>
+          )}
+          <button
+            className={
+              "wb-composer__tool" + (listening ? " wb-composer__tool--active" : "")
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleVoice();
+            }}
+            aria-label="语音输入"
+            title={listening ? "正在聆听…点击停止" : "语音输入"}
+          >
+            <Mic size={16} />
+          </button>
+          {streaming ? (
+            <button
+              className="wb-composer__send wb-composer__send--stop"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCancel();
+              }}
+              aria-label="停止生成"
+            >
+              ■
+            </button>
+          ) : (
+            <button
+              className="wb-composer__send"
+              onClick={(e) => {
+                e.stopPropagation();
+                send();
+              }}
+              disabled={disabled || !apiReady}
+              aria-label="发送"
+              title={!apiReady ? "请先配置 API Key" : "发送消息"}
+            >
+              <SendPlaneIcon size="md" />
+            </button>
+          )}
+        </div>
+      </section>
+      {showMeta && (
+        <div className="wb-composer-meta">
+          {showWorkspacePicker ? (
+            <WorkspacePicker
+              cwd={cwd}
+              workspaces={workspaces!}
+              onSelectWorkspace={onSelectWorkspace!}
+            />
+          ) : (
+            <button className="wb-composer-meta__btn" onClick={() => ph("选择工作空间")}>
+              选择工作空间 <ChevronDownIcon size="sm" />
+            </button>
+          )}
+          <PermissionPicker onToast={onToast} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- SpeechRecognition minimal typing ----------
+// The browser SpeechRecognition API isn't in the TS DOM lib by default, and
+// vendor prefixes vary. We type only the surface we use and resolve the ctor
+// defensively at runtime.
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  0: { transcript: string };
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+interface SpeechRecognitionErrorEventLike {
+  error: string;
+}
+interface VoiceRecognition {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  start: () => void;
+  stop: () => void;
+  abort?: () => void;
+  onresult: (e: SpeechRecognitionEventLike) => void;
+  onerror: (e: SpeechRecognitionErrorEventLike) => void;
+  onend: () => void;
+}
+type VoiceRecognitionCtor = new () => VoiceRecognition;
+
+function getSpeechRecognitionCtor(): VoiceRecognitionCtor | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as {
+    SpeechRecognition?: VoiceRecognitionCtor;
+    webkitSpeechRecognition?: VoiceRecognitionCtor;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}

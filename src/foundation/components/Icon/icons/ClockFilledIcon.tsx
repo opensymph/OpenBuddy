@@ -1,0 +1,17 @@
+import { forwardRef } from "react";
+import { createIcon } from "../Icon";
+
+const ClockFilledIconRaw = forwardRef<SVGSVGElement>((props, ref) => (
+  <svg
+      ref={ref}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path transform="matrix(1 0 0 1 0.0201073 0.0176201)" fillRule="evenodd" d="M2.9858 0Q1.151 1.1503 -0 2.9847L1.1266 3.6916Q2.1156 2.1153 3.6923 1.1268L2.9858 0ZM15.9598 2.9847Q14.8088 1.1503 12.974 0L12.2675 1.1268Q13.8441 2.1153 14.8332 3.6916L15.9598 2.9847ZM7.9805 0.8174Q10.9483 0.8174 13.0469 2.916Q15.1455 5.0145 15.1455 7.9824Q15.1455 10.6121 13.4979 12.5593L14.9507 14.0122L14.0103 14.9526L12.5574 13.4997Q10.6102 15.1474 7.9805 15.1474Q5.3508 15.1474 3.4035 13.4997L1.9507 14.9526L1.0103 14.0122L2.4631 12.5593Q0.8155 10.6121 0.8155 7.9824Q0.8155 5.0145 2.9141 2.916Q5.0126 0.8174 7.9805 0.8174ZM11.4501 6.4526L7.7895 10.1132L7.7849 10.1178Q7.3548 10.548 6.9799 10.548Q6.605 10.548 6.1749 10.1178L6.1703 10.1132L4.5097 8.4526L5.4501 7.5122L6.9799 9.0419L10.5097 5.5122L11.4501 6.4526Z" />
+    </svg>
+));
+ClockFilledIconRaw.displayName = "ClockFilledIconRaw";
+
+export const ClockFilledIcon = createIcon(ClockFilledIconRaw);

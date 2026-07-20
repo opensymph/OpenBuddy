@@ -1,0 +1,37 @@
+/*
+ * OpenBuddy global stylesheet.
+ *
+ * The base reset / body / scrollbar rules live inline in index.html (ported
+ * from workbuddy/renderer/index.html). Design tokens (--wb-*) are loaded
+ * here from tokens.css so any ported WorkBuddy component resolves against
+ * the real palette rather than the VS Code fallbacks.
+ *
+ * Import order matters: tokens first, then app-level aliases.
+ */
+@import "./tokens.css";
+
+/*
+ * Short-form aliases used by some WorkBuddy components and by OpenBuddy's
+ * own placeholder UI. These map onto the semantic tokens above and exist
+ * in both light (:root) and dark ([data-theme="dark"]) forms.
+ */
+:root {
+  --wb-bg-primary: var(--wb-color-bg-secondary-default, #ffffff);
+  --wb-bg-secondary: var(--wb-color-bg-primary-default, #fafafa);
+  --wb-bg-tertiary: var(--wb-color-bg-primary-hover, #f2f2f2);
+  --wb-text-strong: var(--wb-color-text-primary, #1a1a1a);
+  --wb-text-medium: var(--wb-color-text-secondary, #555);
+  --wb-text-weak: var(--wb-color-text-tertiary, #999);
+  --wb-brand: var(--wb-brand-primary, #00c29a);
+  --wb-border-default: var(--wb-color-border-primary, #e6e6e6);
+}
+
+[data-theme="dark"] {
+  --wb-bg-primary: var(--wb-color-bg-secondary-default, #1f1f1f);
+  --wb-bg-secondary: var(--wb-color-bg-primary-default, #141414);
+  --wb-bg-tertiary: var(--wb-color-bg-primary-hover, #2a2a2a);
+  --wb-text-strong: var(--wb-color-text-primary, rgba(255, 255, 255, 0.92));
+  --wb-text-medium: var(--wb-color-text-secondary, rgba(255, 255, 255, 0.65));
+  --wb-text-weak: var(--wb-color-text-tertiary, rgba(255, 255, 255, 0.45));
+  --wb-border-default: var(--wb-color-border-primary, #262626);
+}

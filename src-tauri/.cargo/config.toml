@@ -1,0 +1,10 @@
+# Persist the PROTOC env var so `cargo` / `tauri dev` / `tauri build` all pick
+# it up without manual setup. grok's `xai-grok-tools-api` build script needs a
+# real protoc; its bundled `bin/protoc` is a DotSlash script that does not run
+# on Windows (and has no windows platform entry anyway).
+#
+# protoc 29.3 was downloaded (matching grok's dotslash-pinned version for
+# macos/linux) and extracted to C:\Tools\protoc. GitHub release was mirrored
+# via ghproxy.net since github.com is unreachable from this machine.
+[env]
+PROTOC = "C:\\Tools\\protoc\\bin\\protoc.exe"

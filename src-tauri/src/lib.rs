@@ -1,0 +1,120 @@
+// OpenBuddy Tauri backend library entry point.
+//
+// Spawns the in-process grok agent (grok::spawn_grok), wires the ACP stream
+// to Tauri events (bridge::spawn_dispatcher), and registers the command
+// table (commands) that the React frontend invokes.
+
+mod agents_store;
+mod automations;
+mod bridge;
+mod commands;
+mod ext;
+mod grok;
+mod grok_admin;
+mod mcp;
+mod meta;
+mod notifications;
+mod permission_config;
+mod providers;
+mod sessions;
+mod skills;
+
+use bridge::Permissions;
+use commands::AppState;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    // Initialize logging for debugging
+    let _ = tracing_subscriber::fmt::try_init();
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState::default())
+        .manage(Permissions::new())
+        .invoke_handler(tauri::generate_handler![
+            // session lifecycle
+            commands::grok_init,
+            commands::grok_auth_status,
+            commands::grok_new_session,
+            commands::grok_load_session,
+            commands::grok_list_sessions,
+            commands::grok_set_model,
+            commands::grok_list_workspaces,
+            commands::grok_send,
+            commands::grok_cancel,
+            commands::grok_resolve_permission,
+            commands::grok_rename_session,
+            commands::grok_delete_session,
+            commands::grok_set_session_pinned,
+            // BYOK providers (~/.grok/config.toml [model.*])
+            providers::providers_list,
+            providers::providers_save,
+            providers::providers_delete,
+            // default permission rules (~/.grok/config.toml [permission])
+            permission_config::permission_list,
+            permission_config::permission_save,
+            // agent/assistant defaults (~/.grok/config.toml [models].default + [ui].default_selected_permission)
+            permission_config::agents_defaults_get,
+            permission_config::agents_defaults_save,
+            // skills (x.ai/skills/*)
+            skills::skills_list,
+            skills::skills_add,
+            skills::skills_remove,
+            skills::skills_toggle,
+            // connectors / MCP (x.ai/mcp/*)
+            mcp::mcp_list,
+            mcp::mcp_upsert,
+            mcp::mcp_delete,
+            mcp::mcp_toggle,
+            // experts / assistants (~/.grok/agents/*.md)
+            agents_store::agents_list,
+            agents_store::agents_get,
+            agents_store::agents_save,
+            agents_store::agents_delete,
+            agents_store::agents_template,
+            // grok admin: memory / search / rewind / commands / plan / tasks / reload
+            grok_admin::memory_list,
+            grok_admin::memory_get,
+            grok_admin::memory_save,
+            grok_admin::memory_delete,
+            grok_admin::memory_rewrite,
+            grok_admin::memory_flush,
+            grok_admin::session_search,
+            grok_admin::rewind_points,
+            grok_admin::rewind_execute,
+            grok_admin::session_fork,
+            grok_admin::commands_list,
+            grok_admin::prompt_history,
+            grok_admin::tasks_list,
+            grok_admin::task_kill,
+            grok_admin::folder_trust_respond,
+            grok_admin::toggle_plan_mode,
+            grok_admin::internal_reload,
+            grok_admin::inspiration_generate,
+            grok_admin::account_info,
+            grok_admin::account_check_subscription,
+            grok_admin::account_logout,
+            grok_admin::account_get_api_key,
+            grok_admin::account_set_api_key,
+            grok_admin::account_get_auth_url,
+            grok_admin::account_cancel_auth,
+            grok_admin::plugins_list,
+            grok_admin::plugins_action,
+            grok_admin::marketplace_list,
+            grok_admin::marketplace_action,
+            // notification log (智能体邮箱 → 会话通知中心)
+            notifications::notification_append,
+            notifications::notification_list,
+            notifications::notification_mark_read,
+            notifications::notification_mark_all_read,
+            notifications::notification_clear,
+            // automations (local scheduler)
+            automations::automations_list,
+            automations::automations_save,
+            automations::automations_delete,
+            automations::automations_toggle,
+            automations::automations_run,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running OpenBuddy");
+}
