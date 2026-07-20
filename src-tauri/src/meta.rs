@@ -3,7 +3,7 @@
 //! grok's `summary.json` (and the in-memory `Summary` it serializes) does NOT
 //! support a `pinned` field — it only knows its own schema, and writing an
 //! unknown key would be clobbered the next time grok flushes. So we keep
-//! OpenBuddy-only state (currently: pinned sessions) in a separate file:
+//! OpenBuddy-only state (currently: pinned + archived sessions) in a separate file:
 //! `~/.grok/openbuddy-state.json`.
 //!
 //! Read on every `list_sessions` call and merged into the per-session
@@ -25,6 +25,9 @@ pub struct OpenBuddyState {
     /// Session ids the user pinned to the top of the sidebar.
     #[serde(default)]
     pub pinned_sessions: Vec<String>,
+    /// Session ids the user archived (hidden from the sidebar).
+    #[serde(default)]
+    pub archived_sessions: Vec<String>,
 }
 
 impl Default for OpenBuddyState {
@@ -32,6 +35,7 @@ impl Default for OpenBuddyState {
         Self {
             version: STATE_VERSION,
             pinned_sessions: Vec::new(),
+            archived_sessions: Vec::new(),
         }
     }
 }
@@ -41,6 +45,12 @@ impl OpenBuddyState {
     /// merging into the session list.
     pub fn pinned_set(&self) -> HashSet<String> {
         self.pinned_sessions.iter().cloned().collect()
+    }
+
+    /// Snapshot of archived ids as a `HashSet` for O(1) membership checks when
+    /// filtering the session list.
+    pub fn archived_set(&self) -> HashSet<String> {
+        self.archived_sessions.iter().cloned().collect()
     }
 }
 
@@ -101,4 +111,22 @@ pub fn set_pinned(session_id: &str, pinned: bool) -> Result<bool, String> {
     }
     write_state(&state)?;
     Ok(pinned)
+}
+
+/// Set the archived flag for one session. Returns the new archived state so
+/// the command layer can echo it back to the frontend.
+pub fn set_archived(session_id: &str, archived: bool) -> Result<bool, String> {
+    let mut state = read_state();
+    let set = state.archived_set();
+    let already = set.contains(session_id);
+    if archived && !already {
+        state.archived_sessions.push(session_id.to_string());
+    } else if !archived && already {
+        state.archived_sessions.retain(|s| s != session_id);
+    } else {
+        // No change — still return the desired state without touching disk.
+        return Ok(archived);
+    }
+    write_state(&state)?;
+    Ok(archived)
 }

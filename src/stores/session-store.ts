@@ -4,7 +4,7 @@ import type {
   PlanUpdate,
   PromptComplete,
   SessionUpdate,
-  ToolCallDeltaUpdate,
+  ToolCallContent,
   ToolCallUpdate,
   UsageUpdate,
 } from "@/lib/types";
@@ -109,6 +109,61 @@ export function registerForeignUpdateListener(
   };
 }
 
+/**
+ * Normalize ACP wire-format `ToolCallContent[]` into the shape the frontend
+ * `ToolCallCard` expects.
+ *
+ * ACP (agent-client-protocol-schema 0.11.x) serializes content as:
+ *   - text:  { type: "content", content: { type: "text", text: "…" } }
+ *   - diff:  { type: "diff", path, oldText, newText }
+ *   - term:  { type: "terminal", terminalId }
+ *
+ * The frontend expects:
+ *   - text:  { type: "text", text: "…" }
+ *   - diff:  { type: "diff", diff: { path, old, new } }
+ *   - cmd:   { type: "command_output", command?, output }
+ */
+function normalizeToolCallContent(raw: unknown): ToolCallContent[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as Record<string, unknown>[]).map((item) => {
+    const t = item.type as string;
+
+    // ACP wraps text/images/etc inside { type:"content", content: ContentBlock }.
+    if (t === "content") {
+      const inner = item.content as Record<string, unknown> | undefined;
+      if (inner?.type === "text") {
+        return { type: "text" as const, text: (inner.text as string) ?? "" };
+      }
+      // Image / audio / resource — fall back to showing nothing for now.
+      return { type: "text" as const, text: "" };
+    }
+
+    // ACP diff uses flat oldText/newText; frontend expects nested diff.old/new.
+    if (t === "diff") {
+      return {
+        type: "diff" as const,
+        diff: {
+          path: (item.path as string) ?? "",
+          old: (item.oldText as string) ?? "",
+          new: (item.newText as string) ?? "",
+        },
+      };
+    }
+
+    // ACP terminal → frontend command_output placeholder.
+    if (t === "terminal") {
+      return {
+        type: "command_output" as const,
+        command: undefined,
+        output: `[terminal ${(item.terminalId as string) ?? ""}]`,
+      };
+    }
+
+    // Already in frontend format (text / diff / command_output) — pass through.
+    return item as unknown as ToolCallContent;
+  });
+}
+
 function ensureStreamingAssistant(
   messages: ChatMessage[],
   streamingMessageId: string | null
@@ -176,14 +231,39 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({ sessionId: null, messages: [], streaming: false, streamingMessageId: null, usage: {}, error: null, plan: null }),
 
   startStreaming: () => {
-    set({ streaming: true, error: null, streamingMessageId: null });
+    // Optimistically insert an empty assistant placeholder so the avatar +
+    // "preparing" loading row appears immediately after the user message,
+    // instead of a blank gap until the first streamed chunk arrives.
+    // `ensureStreamingAssistant` reuses this id (it points at an incomplete
+    // assistant message), so subsequent chunks append to it with no flicker.
+    set((s) => {
+      const id = nextId();
+      const placeholder: ChatMessage = {
+        id,
+        role: "assistant",
+        parts: [],
+        complete: false,
+      };
+      return {
+        streaming: true,
+        error: null,
+        streamingMessageId: id,
+        messages: [...s.messages, placeholder],
+      };
+    });
   },
 
   markComplete: (p) => {
     set((s) => {
-      const messages = s.messages.map((m) =>
-        m.id === s.streamingMessageId ? { ...m, complete: true } : m
-      );
+      const messages = s.messages
+        .map((m) =>
+          m.id === s.streamingMessageId ? { ...m, complete: true } : m
+        )
+        // Drop the placeholder if nothing was ever streamed into it —
+        // otherwise we'd be left with an empty avatar bubble.
+        .filter(
+          (m) => !(m.id === s.streamingMessageId && m.parts.length === 0)
+        );
       return {
         messages,
         streaming: false,
@@ -193,7 +273,16 @@ export const useSessionStore = create<SessionState>((set) => ({
     });
   },
 
-  setError: (e) => set({ error: e, streaming: false, streamingMessageId: null }),
+  setError: (e) =>
+    set((s) => ({
+      error: e,
+      streaming: false,
+      streamingMessageId: null,
+      // Remove an empty placeholder that never received content.
+      messages: s.messages.filter(
+        (m) => !(m.id === s.streamingMessageId && m.parts.length === 0)
+      ),
+    })),
 
   pushUser: (text) =>
     set((s) => ({
@@ -259,29 +348,48 @@ export const useSessionStore = create<SessionState>((set) => ({
           return { messages: [...messages], streamingMessageId: id };
         }
         case "tool_call": {
-          const uu = u as unknown as ToolCallUpdate;
+          const raw = u as unknown as Record<string, unknown>;
           const { messages, id } = ensureStreamingAssistant(s.messages, s.streamingMessageId);
           const idx = messages.findIndex((m) => m.id === id);
+          // ACP omits `kind` when it's "other" and `status` when it's
+          // "pending" (the defaults). Provide sensible fallbacks.
+          const status = (raw.status as string) || "in_progress";
           const view: ToolCallView = {
-            toolCallId: uu.toolCallId,
-            title: uu.title,
-            kind: uu.kind,
-            status: uu.status,
-            content: uu.content ?? [],
-            rawInput: uu.rawInput,
+            toolCallId: (raw.toolCallId as string) ?? (raw.tool_call_id as string) ?? "",
+            title: (raw.title as string) ?? "",
+            kind: (raw.kind as string) ?? "other",
+            status: status as ToolCallView["status"],
+            content: normalizeToolCallContent(raw.content),
+            rawInput: raw.rawInput ?? raw.raw_input,
           };
           messages[idx] = upsertToolCall(messages[idx], view);
           return { messages: [...messages], streamingMessageId: id };
         }
         case "tool_call_update": {
-          const uu = u as unknown as ToolCallDeltaUpdate;
+          // ACP serializes ToolCallUpdate with `#[serde(flatten)]` on the
+          // fields struct, so status/content/etc. sit at the TOP LEVEL of
+          // the JSON alongside toolCallId — there is no nested `update` key.
+          const raw = u as unknown as Record<string, unknown>;
+          const tcId = (raw.toolCallId as string) ?? (raw.tool_call_id as string);
+          // Collect the updatable fields (everything except the tag + id).
+          const deltaFields: Record<string, unknown> = {};
+          for (const key of ["kind", "status", "title", "content", "rawInput", "rawOutput", "locations"] as const) {
+            if (raw[key] !== undefined) deltaFields[key] = raw[key];
+          }
+          // Also check snake_case variants the bridge may forward verbatim.
+          if (raw.raw_input !== undefined && deltaFields.rawInput === undefined) deltaFields.rawInput = raw.raw_input;
+          if (raw.raw_output !== undefined && deltaFields.rawOutput === undefined) deltaFields.rawOutput = raw.raw_output;
+          // Normalize content if present.
+          if (deltaFields.content !== undefined) {
+            deltaFields.content = normalizeToolCallContent(deltaFields.content);
+          }
           // Best-effort: apply field updates (e.g. status change) to existing cards.
           const messages = s.messages.map((m) => {
             if (m.id !== s.streamingMessageId) return m;
             const parts = m.parts.map((p) => {
               if (p.kind !== "tool_call") return p;
-              if (p.toolCall.toolCallId !== uu.toolCallId) return p;
-              return { ...p, toolCall: { ...p.toolCall, ...uu.update } as ToolCallView };
+              if (p.toolCall.toolCallId !== tcId) return p;
+              return { ...p, toolCall: { ...p.toolCall, ...deltaFields } as ToolCallView };
             });
             return { ...m, parts };
           });

@@ -202,6 +202,10 @@ export interface SessionSummary {
    *  OpenBuddy-only state (grok has no pinned field); stored in
    *  `~/.grok/openbuddy-state.json`. */
   pinned?: boolean;
+  /** True if the session is archived (hidden from the sidebar).
+   *  OpenBuddy-only state (grok has no archived field); stored in
+   *  `~/.grok/openbuddy-state.json`. */
+  archived?: boolean;
   /** Model id bound to this session, if recorded in summary.json. */
   currentModelId?: string;
 }

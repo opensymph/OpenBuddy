@@ -1,0 +1,55 @@
+diff --git a/crates/build/xai-proto-build/src/lib.rs b/crates/build/xai-proto-build/src/lib.rs
+index 417c4b2..3e5c12a 100644
+--- a/crates/build/xai-proto-build/src/lib.rs
++++ b/crates/build/xai-proto-build/src/lib.rs
+@@ -114,10 +114,20 @@ impl XaiProtoBuilder {
+ 
+         // Can only process one input file when using --dependency_out=FILE.
+         for proto in protos {
++            // OpenBuddy patch: `/dev/stdout` and `/dev/null` don't exist on
++            // Windows. Use a temp file for the dependency list instead. (On
++            // Unix this behaves identically.)
++            let dep_file = tempfile::NamedTempFile::new()
++                .context("failed to create temp file for protoc dependency_out")?;
++            let dep_path = dep_file.path().to_path_buf();
++            let null_path = if cfg!(windows) { "NUL" } else { "/dev/null" };
+             let mut command = Command::new(protoc.unwrap_or(Path::new("protoc")));
+             command
+-                .arg("--dependency_out=/dev/stdout")
+-                .arg("--descriptor_set_out=/dev/null");
++                .arg(format!(
++                    "--dependency_out={}",
++                    dep_path.to_str().context("dep temp path not UTF-8")?
++                ))
++                .arg(format!("--descriptor_set_out={null_path}"));
+ 
+             // Add protoc's well-known types include directory first (if found).
+             // This is needed for Bazel sandboxed builds where protoc and its
+@@ -143,15 +153,18 @@ impl XaiProtoBuilder {
+                 return Err(anyhow::anyhow!("protoc command failed"));
+             }
+ 
+-            let output =
+-                String::from_utf8(output.stdout).context("protoc command output not UTF-8")?;
+-
+-            let mut lines = output.lines();
+-            let first_line = lines.next().context("protoc command output is empty")?;
+-            let prefix = "/dev/null:";
+-            let rem = first_line.strip_prefix(prefix).with_context(|| {
+-                format!("protoc command output must start with /dev/null: {output:?}")
+-            })?;
++            // OpenBuddy patch: read dependency list from the temp file we
++            // passed via --dependency_out (instead of parsing stdout).
++            let dep_content = fs::read_to_string(&dep_path)
++                .context("failed to read protoc dependency_out temp file")?;
++            // Keep `dep_file` alive until we've read it.
++            drop(output);
++
++            let mut lines = dep_content.lines();
++            let first_line = lines.next().context("protoc dependency file is empty")?;
++            // protoc writes the descriptor_set_out path as a prefix on the
++            // first line. Strip it whether it's /dev/null, NUL, or a path.
++            let rem = first_line.split_once(':').map(|(_, r)| r).unwrap_or(first_line);
+             for line in iter::once(rem).chain(lines) {
+                 let line = line.trim();
+                 let line = line.strip_suffix("\\").unwrap_or(line);

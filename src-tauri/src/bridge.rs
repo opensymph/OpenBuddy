@@ -279,10 +279,12 @@ async fn handle_client_message(app: &AppHandle, msg: AcpClientMessage, perms: &P
 /// so the frontend can update the sidebar entry. Unknown update variants are
 /// ignored (we ACK regardless, in `handle_client_message`).
 ///
-/// The wire shape (camelCase, tagged enum):
+/// The wire shape (snake_case tag AND fields — grok's `SessionUpdate` uses
+/// `rename_all = "snake_case"` on the enum, which renames only the tag; the
+/// struct-variant fields keep their Rust snake_case names):
 /// ```json
 /// { "sessionId": "...", "update": { "sessionUpdate": "session_summary_generated",
-///                                   "sessionSummary": "..." }, "meta": {...} }
+///                                   "session_summary": "..." }, "meta": {...} }
 /// ```
 fn handle_session_notification(app: &AppHandle, params: &Value) {
     let Some(session_id) = params.get("sessionId").and_then(|v| v.as_str()) else {
@@ -296,8 +298,12 @@ fn handle_session_notification(app: &AppHandle, params: &Value) {
         .and_then(|v| v.as_str())
         .unwrap_or("");
     if kind == "session_summary_generated" {
+        // Accept the camelCase variant too, defensively — reading only
+        // `sessionSummary` silently drops every generated title (the event
+        // never fires and the sidebar/topbar keeps the placeholder).
         let title = update
-            .get("sessionSummary")
+            .get("session_summary")
+            .or_else(|| update.get("sessionSummary"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if !title.is_empty() {

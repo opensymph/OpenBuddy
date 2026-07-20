@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Check, Folder } from "lucide-react";
+import { ChevronDown, Check, Folder, FolderOpen } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { WorkspaceInfo } from "@/lib/grok-client";
 
 /**
@@ -39,6 +40,18 @@ export function WorkspacePicker({
 
   const triggerLabel = cwd ? shortName(cwd) : "选择工作空间";
 
+  // 打开系统目录选择框,切换到任意文件夹(不限于历史工作空间)。
+  const pickFolder = async () => {
+    try {
+      const selected = await openDialog({ directory: true, multiple: false });
+      if (!selected || Array.isArray(selected)) return;
+      onSelectWorkspace(selected);
+      setOpen(false);
+    } catch {
+      // dialog plugin not available in non-Tauri env (vitest) — no-op.
+    }
+  };
+
   return (
     <div className="workspace-picker" ref={ref}>
       <button
@@ -52,6 +65,16 @@ export function WorkspacePicker({
       </button>
       {open && (
         <ul className="workspace-picker__menu" role="listbox">
+          <li>
+            <button
+              type="button"
+              className="workspace-picker__item workspace-picker__item--browse"
+              onClick={pickFolder}
+            >
+              <FolderOpen size={14} />
+              <span className="workspace-picker__item-name">选择文件夹…</span>
+            </button>
+          </li>
           {workspaces.length === 0 && (
             <li className="workspace-picker__empty">暂无历史工作空间</li>
           )}

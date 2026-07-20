@@ -168,6 +168,18 @@ export async function grokSetSessionPinned(
   return invoke<boolean>("grok_set_session_pinned", { sessionId, pinned });
 }
 
+/**
+ * Archive/unarchive a session. grok's Summary has no archived field, so this
+ * is OpenBuddy-only state stored in `~/.grok/openbuddy-state.json`. Archived
+ * sessions are hidden from the sidebar list. Returns the new archived value.
+ */
+export async function grokSetSessionArchived(
+  sessionId: string,
+  archived: boolean,
+): Promise<boolean> {
+  return invoke<boolean>("grok_set_session_archived", { sessionId, archived });
+}
+
 export async function grokResolvePermission(
   requestId: string,
   outcome: { optionId?: string; cancelled?: boolean }
@@ -318,6 +330,22 @@ export async function permissionList(): Promise<PermissionRule[]> {
  *  NOTE: requires a grok restart to take effect. */
 export async function permissionSave(rules: PermissionRule[]): Promise<void> {
   await invoke<void>("permission_save", { rules });
+}
+
+// ---------- permission mode (~/.grok/config.toml [ui].permission_mode) ----------
+
+/** grok 的权限模式:审批(ask)/自动(auto)/始终允许(always-approve)。 */
+export type PermissionMode = "ask" | "auto" | "always-approve";
+
+/** Read the configured permission mode (default "ask"). */
+export async function permissionModeGet(): Promise<PermissionMode> {
+  return invoke<PermissionMode>("permission_mode_get");
+}
+
+/** Set the permission mode: persists to config.toml and live-notifies the
+ *  running agent via grok's `x.ai/yolo_mode_changed` extension notification. */
+export async function permissionModeSet(mode: PermissionMode): Promise<void> {
+  await invoke<void>("permission_mode_set", { mode });
 }
 
 // ---------- memory (资料库 — ~/.grok/memory/) ----------

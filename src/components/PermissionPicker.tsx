@@ -1,86 +1,83 @@
 /**
- * 默认权限选择器 - Composer meta 行的下拉
+ * 权限模式选择器 - Composer meta 行的下拉
  *
- * 读写 ~/.grok/config.toml 的 [permission] 段（allow/deny/ask 规则）。
- * 显示当前规则数 + 快速添加常用规则的入口。
+ * 对应 grok 的 `[ui] permission_mode`,三档:
+ *  - ask            审批模式:每次工具调用都弹确认
+ *  - auto           自动模式:grok 的分类器自动批准安全操作
+ *  - always-approve 始终允许:所有工具调用自动批准
  *
- * 注意：grok 在启动时读取一次 config.toml，所以修改后需要重启 grok agent
- * 才生效（与 SettingsPanel 的 BYOK provider 一致）。
+ * 切换会写入 config.toml(影响之后的启动),并通过
+ * `x.ai/yolo_mode_changed` 通知运行中的 agent 立即生效。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDownIcon, CheckIcon, AddIcon, DeleteIcon } from "@/foundation/components/Icon/icons";
-import { permissionList, permissionSave } from "@/lib/grok-client";
-import type { PermissionRule } from "@/lib/types";
+import {
+  ChevronDownIcon,
+  CheckIcon,
+  ShieldCheckIcon,
+} from "@/foundation/components/Icon/icons";
+import { permissionModeGet, permissionModeSet } from "@/lib/grok-client";
+import type { PermissionMode } from "@/lib/grok-client";
 
-const ACTIONS = ["allow", "deny", "ask"] as const;
-const TOOLS = ["any", "bash", "read", "edit", "grep", "mcp", "webfetch"] as const;
+const MODES: { id: PermissionMode; label: string; desc: string }[] = [
+  { id: "ask", label: "审批模式", desc: "每次工具调用都需要确认" },
+  { id: "auto", label: "自动模式", desc: "安全操作自动执行,风险操作询问" },
+  { id: "always-approve", label: "始终允许", desc: "所有工具调用自动批准" },
+];
 
-export function PermissionPicker({ onToast }: { onToast?: (msg: string) => void }) {
+export function PermissionPicker({
+  onToast,
+  triggerLabel,
+}: {
+  onToast?: (msg: string) => void;
+  /** 覆盖触发按钮文字（如本地助理页固定显示「默认权限」）；缺省显示当前模式名。 */
+  triggerLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
-  const [rules, setRules] = useState<PermissionRule[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [mode, setMode] = useState<PermissionMode>("ask");
+  const [busy, setBusy] = useState(false);
   const popRef = useRef<HTMLDivElement>(null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      setRules(await permissionList());
-      setDirty(false);
-    } catch (e) {
-      onToast?.(`加载权限规则失败：${String(e).replace(/^Error:\s*/, "")}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [onToast]);
-
-  // Load on first open only.
   useEffect(() => {
-    if (open && rules.length === 0 && !loading) reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+    permissionModeGet()
+      .then(setMode)
+      .catch(() => {
+        /* 读不到就用默认 ask */
+      });
+  }, []);
 
   // Close on outside click.
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
       if (popRef.current && !popRef.current.contains(e.target as Node)) {
-        // Only auto-close if there are no unsaved edits; otherwise make the
-        // user click Save/Discard explicitly.
-        if (!dirty) setOpen(false);
+        setOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [open, dirty]);
+  }, [open]);
 
-  const addRule = () => {
-    setRules((prev) => [...prev, { action: "allow", tool: "bash", pattern: "" }]);
-    setDirty(true);
-  };
+  const select = useCallback(
+    async (next: PermissionMode) => {
+      if (next === mode) {
+        setOpen(false);
+        return;
+      }
+      setBusy(true);
+      try {
+        await permissionModeSet(next);
+        setMode(next);
+        setOpen(false);
+      } catch (e) {
+        onToast?.(`权限模式切换失败:${String(e).replace(/^Error:\s*/, "")}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [mode, onToast],
+  );
 
-  const updateRule = (idx: number, patch: Partial<PermissionRule>) => {
-    setRules((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
-    setDirty(true);
-  };
-
-  const removeRule = (idx: number) => {
-    setRules((prev) => prev.filter((_, i) => i !== idx));
-    setDirty(true);
-  };
-
-  const save = async () => {
-    try {
-      await permissionSave(rules);
-      setDirty(false);
-      onToast?.("权限规则已保存（重启 grok 后生效）");
-      setOpen(false);
-    } catch (e) {
-      onToast?.(`保存失败：${String(e).replace(/^Error:\s*/, "")}`);
-    }
-  };
-
-  const summary = rules.length === 0 ? "无规则（默认）" : `${rules.length} 条规则`;
+  const current = MODES.find((m) => m.id === mode) ?? MODES[0];
 
   return (
     <div className="permission-picker" ref={popRef}>
@@ -88,97 +85,35 @@ export function PermissionPicker({ onToast }: { onToast?: (msg: string) => void 
         type="button"
         className="wb-composer-meta__btn"
         onClick={() => setOpen((v) => !v)}
+        title={`权限模式 · ${current.desc}`}
       >
-        默认权限 · {summary}
+        <ShieldCheckIcon size="sm" />
+        {triggerLabel ?? current.label}
         <ChevronDownIcon size="sm" />
       </button>
       {open && (
-        <div className="permission-picker__popover" role="menu">
-          <div className="permission-picker__header">
-            <span>权限规则</span>
-            <button
-              type="button"
-              className="permission-picker__add"
-              onClick={addRule}
-              title="添加规则"
-            >
-              <AddIcon size="sm" /> 添加
-            </button>
-          </div>
-          <div className="permission-picker__list">
-            {rules.length === 0 && !loading && (
-              <div className="permission-picker__empty">
-                暂无规则。grok 将对每个工具调用弹出确认。
-              </div>
-            )}
-            {rules.map((rule, idx) => (
-              <div key={idx} className="permission-picker__row">
-                <select
-                  className="permission-picker__select"
-                  value={rule.action}
-                  onChange={(e) => updateRule(idx, { action: e.target.value })}
-                >
-                  {ACTIONS.map((a) => (
-                    <option key={a} value={a}>
-                      {a === "allow" ? "允许" : a === "deny" ? "拒绝" : "询问"}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="permission-picker__select"
-                  value={rule.tool}
-                  onChange={(e) => updateRule(idx, { tool: e.target.value })}
-                >
-                  {TOOLS.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="permission-picker__pattern"
-                  placeholder="pattern，如 git *"
-                  value={rule.pattern ?? ""}
-                  onChange={(e) => updateRule(idx, { pattern: e.target.value })}
-                />
-                <button
-                  type="button"
-                  className="permission-picker__del"
-                  onClick={() => removeRule(idx)}
-                  title="删除"
-                >
-                  <DeleteIcon size="sm" />
-                </button>
-              </div>
+        <div className="permission-picker__popover permission-picker__popover--modes" role="menu">
+          <div className="permission-picker__header">权限模式</div>
+          <div className="permission-picker__modes">
+            {MODES.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className={
+                  "permission-picker__mode" +
+                  (m.id === mode ? " permission-picker__mode--active" : "")
+                }
+                onClick={() => select(m.id)}
+                disabled={busy}
+                role="menuitemradio"
+                aria-checked={m.id === mode}
+              >
+                <span className="permission-picker__mode-label">{m.label}</span>
+                <span className="permission-picker__mode-desc">{m.desc}</span>
+                {m.id === mode && <CheckIcon size="sm" className="permission-picker__mode-check" />}
+              </button>
             ))}
-            {loading && <div className="permission-picker__empty">加载中…</div>}
           </div>
-          {dirty && (
-            <div className="permission-picker__footer">
-              <span className="permission-picker__hint">重启 grok 后生效</span>
-              <div className="permission-picker__actions">
-                <button
-                  type="button"
-                  className="permission-picker__btn permission-picker__btn--ghost"
-                  onClick={() => reload()}
-                >
-                  放弃
-                </button>
-                <button
-                  type="button"
-                  className="permission-picker__btn permission-picker__btn--primary"
-                  onClick={save}
-                >
-                  <CheckIcon size="sm" /> 保存
-                </button>
-              </div>
-            </div>
-          )}
-          {!dirty && rules.length > 0 && (
-            <div className="permission-picker__footer">
-              <span className="permission-picker__hint">重启 grok 后生效</span>
-            </div>
-          )}
         </div>
       )}
     </div>

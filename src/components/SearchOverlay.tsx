@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, Clock, FileText } from "lucide-react";
 import { useSessionsStore } from "@/stores/sessions-store";
 import { sessionSearch } from "@/lib/grok-client";
@@ -27,7 +27,16 @@ export function SearchOverlay({
   onClose: () => void;
   onSelect: (sessionId: string, cwd?: string) => void;
 }) {
-  const sessions = useSessionsStore((s) => s.sessions);
+  // Two-section model: there is no single flat list anymore. For local title
+  // matching we flatten whatever the sidebar currently holds (independent +
+  // any expanded 空间 node caches). Cross-cwd content search still goes via
+  // grok FTS below, so unexpanded nodes remain searchable by content/title.
+  const independent = useSessionsStore((s) => s.independent);
+  const workspaceSessions = useSessionsStore((s) => s.workspaceSessions);
+  const sessions = useMemo<SessionSummary[]>(
+    () => [...independent, ...Object.values(workspaceSessions).flat()],
+    [independent, workspaceSessions],
+  );
   const [query, setQuery] = useState("");
   const [remoteHits, setRemoteHits] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -131,7 +140,7 @@ export function SearchOverlay({
           {localMatches.length > 0 && (
             <>
               <div className="conversation-search-modal__count">
-                当前工作空间 ({localMatches.length})
+                本地会话 ({localMatches.length})
               </div>
               <ul className="conversation-search-modal__list">
                 {localMatches.slice(0, 30).map((s) => (

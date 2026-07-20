@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { XCloseIcon } from "@/foundation/components/Icon/icons";
-import headerIconUrl from "@/assets/header-icon.svg";
+import logoMarkUrl from "@/assets/logo-mark.svg";
 
 interface MenuItem {
   label: string;
@@ -167,7 +167,7 @@ export function TitleBar({
           aria-label="OpenBuddy"
           title="关于 OpenBuddy"
         >
-          <img src={headerIconUrl} alt="" width={14} height={14} />
+          <img src={logoMarkUrl} alt="" width={14} height={14} />
           <span>OpenBuddy</span>
         </button>
         {Object.keys(MENUS).map((name) => (

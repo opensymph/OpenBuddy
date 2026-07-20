@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ToolCallView } from "@/stores/session-store";
 import type { DiffContent, CommandOutputContent } from "@/lib/types";
 
@@ -11,6 +11,15 @@ import type { DiffContent, CommandOutputContent } from "@/lib/types";
  */
 export function ToolCallCard({ tc }: { tc: ToolCallView }) {
   const [open, setOpen] = useState(tc.status === "in_progress");
+
+  // Auto-expand while running, auto-collapse when done.
+  useEffect(() => {
+    if (tc.status === "in_progress") {
+      setOpen(true);
+    } else {
+      setOpen(false);
+    }
+  }, [tc.status]);
   const diff = tc.content.find((c) => c.type === "diff") as DiffContent | undefined;
   const cmd = tc.content.find((c) => c.type === "command_output") as
     | CommandOutputContent
@@ -29,10 +38,13 @@ export function ToolCallCard({ tc }: { tc: ToolCallView }) {
 
   return (
     <div className={"toolcall " + statusCls}>
-      <button className="toolcall__head" onClick={() => setOpen((o) => !o)}>
+      <button
+        className="toolcall__head"
+        onClick={() => setOpen((o) => !o)}
+        title={tc.title}
+      >
         <span className="toolcall__kind">{tc.kind}</span>
         <span className="toolcall__title">{tc.title}</span>
-        <span className="toolcall__status">{tc.status}</span>
         <span className="toolcall__chev">{open ? "▾" : "▸"}</span>
       </button>
       {open && (
@@ -54,6 +66,14 @@ export function ToolCallCard({ tc }: { tc: ToolCallView }) {
               {t.text}
             </pre>
           ))}
+          {/* Fallback: show rawInput when no content blocks rendered. */}
+          {!diff && !cmd && texts.length === 0 && tc.rawInput != null && (
+            <pre className="toolcall__text toolcall__raw-input">
+              {typeof tc.rawInput === "string"
+                ? tc.rawInput
+                : JSON.stringify(tc.rawInput, null, 2)}
+            </pre>
+          )}
         </div>
       )}
     </div>

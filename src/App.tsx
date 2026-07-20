@@ -12,10 +12,12 @@ import { SearchOverlay } from "./components/SearchOverlay";
 import { AboutDialog } from "./components/AboutDialog";
 import { FolderTrustDialog } from "./components/FolderTrustDialog";
 import { TasksPanel } from "./components/TasksPanel";
+import { SidebarToggleIcon, WbNewTaskIcon } from "./foundation/components/Icon/icons";
 import type { ModelOption } from "./components/ModelSelector";
 import { useSessionStore } from "./stores/session-store";
 import { useSessionsStore } from "./stores/sessions-store";
 import { usePermissionStore } from "./stores/permission-store";
+import { TopbarTitle } from "./components/TopbarTitle";
 import {
   grokInit,
   grokNewSession,
@@ -24,6 +26,7 @@ import {
   grokLoadSession,
   grokListSessions,
   grokListWorkspaces,
+  grokRenameSession,
   grokSetModel,
   providersList,
   notificationAppend,
@@ -32,6 +35,7 @@ import {
   type WorkspaceInfo,
 } from "./lib/grok-client";
 import type { AgentEntry } from "./lib/types";
+import type { ProjectMeta } from "./stores/projects-store";
 
 export default function App() {
   return (
@@ -50,6 +54,7 @@ function Shell() {
   const [trustRequest, setTrustRequest] = useState<{ cwd?: string; reason?: string } | null>(null);
   const [taskRefreshSignal, setTaskRefreshSignal] = useState(0);
   const [placeholderView, setPlaceholderView] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [currentModelId, setCurrentModelId] = useState<string | undefined>(undefined);
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -67,8 +72,13 @@ function Shell() {
     (async () => {
       try {
         const result = await grokInit();
+        // grok rejects an empty cwd ("Path is not absolute"), so every session
+        // needs an absolute path. We treat grok's initial cwd as the "inbox":
+        // 新建任务 aims at it (⇒ 任务 group), and the user can re-aim a new
+        // session at another directory via the Composer workspace picker
+        // (⇒ that 空间 node). homeCwd drives the store's group routing.
         cwdRef.current = result.cwd;
-        sessionsStore.getState().setCwd(result.cwd);
+        sessionsStore.getState().setHomeCwd(result.cwd);
         setInit(result);
         setCurrentModelId(result.defaultModelId);
 
@@ -175,8 +185,16 @@ function Shell() {
           },
         });
 
-        const list = await grokListSessions(result.cwd);
-        sessionsStore.getState().set(list);
+        // Sidebar now shows two groups: 任务 (the inbox cwd's sessions) +
+        // 空间 (one node per other working directory). Load both up front;
+        // 空间 node children are lazy-loaded when a node is expanded.
+        const [independent, ws] = await Promise.all([
+          grokListSessions(result.cwd),
+          grokListWorkspaces(),
+        ]);
+        sessionsStore.getState().setIndependent(independent);
+        sessionsStore.getState().setWorkspaces(ws);
+        setWorkspaces(ws);
 
         // Load the model list (from config.toml [model.*]) for the picker.
         // Each provider becomes one ModelOption; the id is the grok routing slug.
@@ -206,10 +224,6 @@ function Shell() {
             setCurrentModelId(providerOptions[0].id);
           }
         }
-
-        // Load the workspace list for the workspace picker.
-        const ws = await grokListWorkspaces();
-        setWorkspaces(ws);
       } catch (e) {
         setInitError(String(e));
       }
@@ -220,6 +234,21 @@ function Shell() {
   }, [sessionStore, sessionsStore, permissionStore]);
 
   const currentSessionId = sessionsStore((s) => s.currentSessionId);
+  // The active session's sidebar entry (title + cwd), looked up across the
+  // 任务 + 空间 groups — drives the topbar title on the conversation page and
+  // the cwd scoping of a manual rename (mirrors WorkBuddy's topbar).
+  const currentEntry = sessionsStore((s) => {
+    const id = s.currentSessionId;
+    if (!id) return undefined;
+    const inTasks = s.independent.find((x) => x.sessionId === id);
+    if (inTasks) return inTasks;
+    for (const cwd of Object.keys(s.workspaceSessions)) {
+      const hit = s.workspaceSessions[cwd].find((x) => x.sessionId === id);
+      if (hit) return hit;
+    }
+    return undefined;
+  });
+  const currentTitle = currentEntry?.title || "";
   const streaming = sessionStore((s) => s.streaming);
 
   const showToast = (message: string) => {
@@ -259,6 +288,8 @@ function Shell() {
       const sessionId = await grokNewSession(cwd, currentModelId);
       console.log('[OpenBuddy] New session created:', sessionId);
       sessionsStore.getState().setCurrent(sessionId);
+      // 从占位视图（如「本地助理」页）发起会话后，切到 ChatView 看回复。
+      setPlaceholderView(null);
       // Placeholder title — grok will push the LLM-generated title via the
       // grok://summary event (SessionSummaryGenerated) within a few seconds,
       // which our onSummary handler applies to the same store entry.
@@ -296,6 +327,24 @@ function Shell() {
     }
   };
 
+  // Topbar title rename — grok's `x.ai/session/rename`. grok broadcasts
+  // SessionSummaryGenerated on success (grok://summary → onSummary upserts the
+  // same entry); we also upsert optimistically to avoid a flicker while the
+  // event round-trips. On failure we rethrow so TopbarTitle reverts its draft.
+  const handleRenameTitle = async (newTitle: string) => {
+    if (!currentEntry) return;
+    try {
+      await grokRenameSession(currentEntry.sessionId, newTitle, currentEntry.cwd);
+      sessionsStore.getState().upsert({
+        sessionId: currentEntry.sessionId,
+        title: newTitle,
+      });
+    } catch (e) {
+      showToast(`重命名失败：${String(e).replace(/^Error:\s*/, "")}`);
+      throw e;
+    }
+  };
+
   // Model picker: switch the current session's model via grok's set_model.
   // If there's no session yet, we just remember the choice and apply it in
   // handleSendNew when the session is created.
@@ -318,23 +367,13 @@ function Shell() {
     }
   };
 
-  // Workspace picker: switch the active cwd. ACP locks cwd per-session, so
-  // this doesn't migrate the current session — it just changes where the
-  // NEXT new session will live, and refreshes the sidebar list. We also drop
-  // the current transcript since it belonged to the old workspace.
-  const handleSelectWorkspace = async (newCwd: string) => {
-    if (newCwd === cwdRef.current) return;
+  // Workspace picker: only re-aim the "target cwd" for the NEXT new session.
+  // In the two-section model the sidebar already shows every workspace, so we
+  // must NOT clear the current transcript or rebuild the list here — picking a
+  // directory just decides which group the next 新建任务 lands in (empty =
+  // 任务 group, a real dir = that 空间 node).
+  const handleSelectWorkspace = (newCwd: string) => {
     cwdRef.current = newCwd;
-    sessionsStore.getState().setCwd(newCwd);
-    sessionsStore.getState().setCurrent(null);
-    sessionStore.getState().reset();
-    setPlaceholderView(null);
-    try {
-      const list = await grokListSessions(newCwd);
-      sessionsStore.getState().set(list);
-    } catch (e) {
-      showToast(`加载工作空间失败：${String(e)}`);
-    }
   };
 
   const handleNewSession = () => {
@@ -343,12 +382,21 @@ function Shell() {
     sessionStore.getState().reset();
   };
 
+  // 空间节点展开/折叠: 记录展开态, 首次展开时懒加载该 cwd 的子会话。
+  const handleToggleWorkspace = async (cwd: string, next: boolean) => {
+    sessionsStore.getState().setExpanded(cwd, next);
+    if (next && sessionsStore.getState().workspaceSessions[cwd] === undefined) {
+      try {
+        const list = await grokListSessions(cwd);
+        sessionsStore.getState().setWorkspaceSessions(cwd, list);
+      } catch (e) {
+        showToast(`加载空间会话失败：${String(e)}`);
+      }
+    }
+  };
+
   const handleSelectSession = async (sessionId: string, sessionCwd?: string) => {
     setPlaceholderView(null);
-    // If the hit is from another workspace, switch first so the load succeeds.
-    if (sessionCwd && sessionCwd !== cwdRef.current) {
-      await handleSelectWorkspace(sessionCwd);
-    }
     sessionsStore.getState().setCurrent(sessionId);
     // Clear the transcript before load: grok replays the persisted history as
     // a fresh stream of SessionUpdate messages, which our grok://update
@@ -356,7 +404,9 @@ function Shell() {
     // messages get appended to whatever was already on screen.
     sessionStore.getState().setSession(sessionId);
     try {
-      await grokLoadSession(sessionId, cwdRef.current);
+      // Load with the session's OWN cwd (independent sessions have cwd="").
+      // Viewing a 空间 child must NOT re-aim the new-session target directory.
+      await grokLoadSession(sessionId, sessionCwd ?? "");
     } catch (e) {
       sessionStore.getState().setError(String(e));
     }
@@ -418,23 +468,77 @@ function Shell() {
     }
   };
 
+  // 进入本地项目：把种子会话瞄到项目关联目录（使其归入对应空间节点），
+  // 新建会话并注入项目说明作为种子消息。
+  const handleStartProject = async (project: ProjectMeta) => {
+    try {
+      if (project.cwd) {
+        cwdRef.current = project.cwd;
+      }
+      setPlaceholderView(null);
+      const cwd = cwdRef.current;
+      const sessionId = await grokNewSession(cwd, currentModelId);
+      sessionsStore.getState().setCurrent(sessionId);
+      sessionsStore.getState().upsert({ sessionId, title: project.name, cwd });
+      sessionStore.getState().setSession(sessionId);
+      const seed = project.instructions?.trim()
+        ? project.instructions
+        : `你好，我们开始「${project.name}」项目吧。`;
+      sessionStore.getState().pushUser(seed);
+      sessionStore.getState().startStreaming();
+      await grokSend(sessionId, seed);
+    } catch (e) {
+      sessionStore.getState().setError(String(e));
+      showToast(`启动项目失败：${String(e).replace(/^Error:\s*/, "")}`);
+    }
+  };
+
   const activeNav = placeholderView ?? (currentSessionId ? "" : "新建任务");
 
   return (
     <div className="app">
       <TitleBar onPlaceholder={handlePlaceholder} onShowAbout={() => setAboutOpen(true)} />
-      <div className="app__body">
+      <div className={"app__body" + (sidebarCollapsed ? " app__body--collapsed" : "")}>
         <Sidebar
           onNewSession={handleNewSession}
           onSelect={handleSelectSession}
           onNavigate={handleNavigate}
           onOpenSettings={() => setSettingsOpen(true)}
+          onToggleCollapse={() => setSidebarCollapsed(true)}
+          onToggleWorkspace={handleToggleWorkspace}
           onOpenSearch={() => setSearchOpen(true)}
           onPlaceholder={handlePlaceholder}
           onToast={showToast}
           activeNav={activeNav}
         />
         <main className="app__main">
+          <header className="main-topbar">
+            <div className="main-topbar__left">
+              {sidebarCollapsed && (
+                <>
+                  <button
+                    className="main-topbar__btn"
+                    aria-label="展开侧边栏"
+                    data-tip="展开侧边栏"
+                    onClick={() => setSidebarCollapsed(false)}
+                  >
+                    <SidebarToggleIcon size="md" />
+                  </button>
+                  <button
+                    className="main-topbar__btn"
+                    aria-label="新建任务"
+                    data-tip="新建任务"
+                    onClick={handleNewSession}
+                  >
+                    <WbNewTaskIcon size="md" />
+                  </button>
+                </>
+              )}
+              {!placeholderView && currentSessionId && (
+                <TopbarTitle title={currentTitle} onRename={handleRenameTitle} />
+              )}
+            </div>
+          </header>
           {initError ? (
             <div className="app__notice app__notice--err">
               初始化失败:{initError}
@@ -459,6 +563,14 @@ function Shell() {
               onSelectWorkspace={handleSelectWorkspace}
               sessionId={currentSessionId ?? undefined}
               onLaunch={handleLaunchDiscover}
+              onSend={handleSendNew}
+              streaming={streaming}
+              apiReady={init.auth.ready}
+              onOpenSettings={() => setSettingsOpen(true)}
+              modelId={currentModelId}
+              models={models}
+              onModelChange={handleModelChange}
+              onStartProject={handleStartProject}
             />
           ) : currentSessionId ? (
             <ChatView

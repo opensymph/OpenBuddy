@@ -46,6 +46,7 @@ pub fn run() {
             commands::grok_rename_session,
             commands::grok_delete_session,
             commands::grok_set_session_pinned,
+            commands::grok_set_session_archived,
             // BYOK providers (~/.grok/config.toml [model.*])
             providers::providers_list,
             providers::providers_save,
@@ -53,6 +54,9 @@ pub fn run() {
             // default permission rules (~/.grok/config.toml [permission])
             permission_config::permission_list,
             permission_config::permission_save,
+            // permission mode (~/.grok/config.toml [ui].permission_mode + live notify)
+            permission_config::permission_mode_get,
+            permission_config::permission_mode_set,
             // agent/assistant defaults (~/.grok/config.toml [models].default + [ui].default_selected_permission)
             permission_config::agents_defaults_get,
             permission_config::agents_defaults_save,

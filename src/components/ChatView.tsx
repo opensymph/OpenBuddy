@@ -74,10 +74,6 @@ export function ChatView({
           )}
         </>
       )}
-      {/* Rewind bar: show when session is loaded and not streaming. */}
-      {sessionId && !streaming && (
-        <RewindBar sessionId={sessionId} />
-      )}
       <div className="chatview__scroll" ref={scrollRef}>
         <div className="chatview__inner">
           {messages.map((m) => (
@@ -93,6 +89,8 @@ export function ChatView({
         {streaming && usage.totalTokens ? (
           <div className="chatview__tokens">{usage.totalTokens} tokens</div>
         ) : null}
+        {/* Rewind / fork: 会话级工具，放在输入框正上方（不再漂浮到左上角挡标题栏）。 */}
+        {sessionId && !streaming && <RewindBar sessionId={sessionId} />}
         <Composer
           streaming={streaming}
           onSend={onSend}
@@ -103,7 +101,7 @@ export function ChatView({
           cwd={cwd}
           workspaces={workspaces}
           onSelectWorkspace={onSelectWorkspace}
-          showMeta
+          showDisclaimer
         />
       </div>
     </div>

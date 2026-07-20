@@ -130,6 +130,7 @@ body[data-vscode-theme-name="IDE Light"] {
   --wb-text-strong: var(--wb-color-text-primary);
   --wb-text-medium: var(--wb-color-text-secondary);
   --wb-text-weak: var(--wb-color-text-tertiary);
+  --wb-text-tertiary: var(--wb-color-text-tertiary);
   --wb-text-disable: var(--wb-color-text-disabled);
   --wb-text-white: var(--wb-palette-white-100);
   --wb-text-muted: var(--wb-color-text-disabled);
@@ -269,6 +270,7 @@ body.dark,
   --wb-text-strong: var(--wb-color-text-primary);
   --wb-text-medium: var(--wb-color-text-secondary);
   --wb-text-weak: var(--wb-color-text-tertiary);
+  --wb-text-tertiary: var(--wb-color-text-tertiary);
   --wb-text-disable: var(--wb-color-text-disabled);
   --wb-text-white: var(--wb-palette-white-100);
   --wb-text-muted: var(--wb-color-text-disabled);

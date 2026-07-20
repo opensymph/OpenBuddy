@@ -1,5 +1,5 @@
 import { AgentToolIcon } from "@/foundation/components/Icon/icons";
-import { AssistantsPanel } from "./AssistantsPanel";
+import { LocalAssistantView } from "./LocalAssistantView";
 import { ProjectsPanel } from "./ProjectsPanel";
 import { ExpertsPanel } from "./ExpertsPanel";
 import { AutomationPanel } from "./AutomationPanel";
@@ -8,6 +8,8 @@ import { PluginsPanel } from "./PluginsPanel";
 import { MarketplacePanel } from "./MarketplacePanel";
 import { DiscoverPanel } from "./DiscoverPanel";
 import type { AgentEntry } from "@/lib/types";
+import type { ModelOption } from "./ModelSelector";
+import type { ProjectMeta } from "@/stores/projects-store";
 
 interface PlaceholderPageProps {
   label: string;
@@ -24,6 +26,20 @@ interface PlaceholderPageProps {
   sessionId?: string;
   /** Discover launcher: open a new session + send prompt (optionally with agent). */
   onLaunch?: (prompt: string, agent?: AgentEntry) => void;
+  /** 本地助理页：发送消息（新建会话）。 */
+  onSend?: (text: string) => void;
+  /** 本地助理页：是否流式中。 */
+  streaming?: boolean;
+  /** 本地助理页：API 是否就绪。 */
+  apiReady?: boolean;
+  /** 本地助理页：打开设置。 */
+  onOpenSettings?: () => void;
+  /** 本地助理页：模型选择器（与聊天页一致）。 */
+  modelId?: string;
+  models?: ModelOption[];
+  onModelChange?: (id: string) => void;
+  /** 项目页：进入项目（新建会话并注入说明）。 */
+  onStartProject?: (project: ProjectMeta) => void;
 }
 
 /** WorkBuddy 独有功能面板（助理/专家·技能·连接器/项目/自动化/资料库/插件·市场/发现）。 */
@@ -36,13 +52,26 @@ export function PlaceholderPage({
   onSelectWorkspace,
   sessionId,
   onLaunch,
+  onSend,
+  streaming,
+  apiReady,
+  onOpenSettings,
+  modelId,
+  models,
+  onModelChange,
+  onStartProject,
 }: PlaceholderPageProps) {
   if (label === "助理") {
     return (
-      <AssistantsPanel
-        onUseAssistant={onStartWithExpert}
-        onToast={onToast}
+      <LocalAssistantView
+        onSend={onSend ?? (() => {})}
+        streaming={streaming ?? false}
+        apiReady={apiReady ?? true}
+        onOpenSettings={onOpenSettings}
         onPlaceholder={onPlaceholder}
+        modelId={modelId}
+        models={models}
+        onModelChange={onModelChange}
       />
     );
   }
@@ -53,6 +82,7 @@ export function PlaceholderPage({
         cwd={cwd}
         onSelectWorkspace={onSelectWorkspace}
         onToast={onToast}
+        onStartProject={onStartProject}
       />
     );
   }

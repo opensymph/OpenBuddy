@@ -8,6 +8,8 @@ const base = {
   onSelect: vi.fn(),
   onNavigate: vi.fn(),
   onOpenSettings: vi.fn(),
+  onToggleCollapse: vi.fn(),
+  onToggleWorkspace: vi.fn(),
   onOpenSearch: vi.fn(),
   onPlaceholder: vi.fn(),
   activeNav: "新建任务",
@@ -30,11 +32,12 @@ describe("Sidebar", () => {
 
   it("渲染会话列表并可选中", () => {
     const onSelect = vi.fn();
-    useSessionsStore.getState().set([{ sessionId: "s1", title: "测试会话", cwd: "/tmp" } as any]);
+    // cwd-less session ⇒ 任务 group (independent). onSelect now also receives cwd.
+    useSessionsStore.getState().setIndependent([{ sessionId: "s1", title: "测试会话", cwd: "" } as any]);
     render(<Sidebar {...base} onSelect={onSelect} />);
     fireEvent.click(screen.getByText("测试会话"));
-    expect(onSelect).toHaveBeenCalledWith("s1");
-    useSessionsStore.getState().set([]);
+    expect(onSelect).toHaveBeenCalledWith("s1", "");
+    useSessionsStore.getState().setIndependent([]);
   });
 
   it("搜索按钮触发 onOpenSearch,设置按钮触发 onOpenSettings", () => {
@@ -47,5 +50,12 @@ describe("Sidebar", () => {
     expect(onOpenSearch).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
     expect(onOpenSettings).toHaveBeenCalled();
+  });
+
+  it("收起侧边栏按钮触发 onToggleCollapse", () => {
+    const onToggleCollapse = vi.fn();
+    render(<Sidebar {...base} onToggleCollapse={onToggleCollapse} />);
+    fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
+    expect(onToggleCollapse).toHaveBeenCalled();
   });
 });

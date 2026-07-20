@@ -299,3 +299,90 @@ pub fn agents_defaults_save(
 ) -> Result<(), String> {
     write_defaults(&defaults)
 }
+
+// ========================================================================
+// Permission mode — `[ui] permission_mode` ("ask" | "auto" | "always-approve")
+// ========================================================================
+
+/// Canonical permission modes grok accepts (see grok-build
+/// `util/config/permissions.rs::parse_permission_mode_canonical`).
+pub const PERMISSION_MODES: [&str; 3] = ["ask", "auto", "always-approve"];
+
+/// Read the configured permission mode. Mirrors grok's precedence:
+/// `permission_mode` > legacy `approval_mode` > legacy `yolo`; default "ask".
+pub fn read_permission_mode() -> String {
+    let config = crate::providers::read_config();
+    let Some(ui) = config.get("ui").and_then(Value::as_table) else {
+        return "ask".into();
+    };
+    if let Some(m) = ui.get("permission_mode").and_then(Value::as_str) {
+        return match m {
+            "always-approve" => "always-approve".into(),
+            "auto" => "auto".into(),
+            // "ask" / "default" / unknown → ask (grok fails safe the same way)
+            _ => "ask".into(),
+        };
+    }
+    if let Some(m) = ui.get("approval_mode").and_then(Value::as_str) {
+        return if m == "always-approve" { "always-approve".into() } else { "ask".into() };
+    }
+    if ui.get("yolo").and_then(Value::as_bool).unwrap_or(false) {
+        return "always-approve".into();
+    }
+    "ask".into()
+}
+
+/// Persist the mode to `[ui] permission_mode`. Other `[ui]` keys are preserved;
+/// legacy `approval_mode`/`yolo` keys are removed so they can't shadow the new
+/// value on old precedence paths.
+pub fn write_permission_mode(mode: &str) -> Result<(), String> {
+    if !PERMISSION_MODES.contains(&mode) {
+        return Err(format!("unknown permission mode: {mode}"));
+    }
+    let mut config = crate::providers::read_config();
+    let root = config.as_table_mut().ok_or("config root is not a table")?;
+    if !root.contains_key("ui") {
+        root.insert("ui".into(), Value::Table(Map::new()));
+    }
+    let ui = root.get_mut("ui").and_then(Value::as_table_mut).unwrap();
+    ui.insert("permission_mode".into(), Value::String(mode.into()));
+    ui.remove("approval_mode");
+    ui.remove("yolo");
+    crate::providers::write_config(&config)
+}
+
+/// Current permission mode ("ask" | "auto" | "always-approve").
+#[tauri::command]
+pub fn permission_mode_get(_state: State<'_, AppState>) -> String {
+    read_permission_mode()
+}
+
+/// Set the permission mode: persist to config.toml (for future launches) AND
+/// notify the running agent via grok's `x.ai/yolo_mode_changed` extension
+/// notification so existing sessions switch immediately. The notification is
+/// best-effort — if the agent isn't up yet, the config write alone suffices.
+#[tauri::command]
+pub async fn permission_mode_set(
+    state: State<'_, AppState>,
+    mode: String,
+) -> Result<(), String> {
+    write_permission_mode(&mode)?;
+
+    let tx = state.tx.lock().unwrap().clone();
+    if let Some(tx) = tx {
+        use xai_acp_lib::{AcpAgentMessage, AcpArgs};
+        let params = crate::ext::raw_params(&serde_json::json!({
+            "permission_mode": mode,
+            "yolo_mode": mode == "always-approve",
+            "auto_mode": mode == "auto",
+        }));
+        let notif = agent_client_protocol::ExtNotification::new("x.ai/yolo_mode_changed", params);
+        let (response_tx, _response_rx) = tokio::sync::oneshot::channel();
+        // Fire-and-forget: a send error only means the agent went away mid-call.
+        let _ = tx.send(AcpAgentMessage::ExtNotification(AcpArgs {
+            request: notif,
+            response_tx,
+        }));
+    }
+    Ok(())
+}

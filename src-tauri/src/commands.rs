@@ -305,3 +305,12 @@ pub async fn grok_delete_session(
 pub fn grok_set_session_pinned(session_id: String, pinned: bool) -> Result<bool, String> {
     crate::meta::set_pinned(&session_id, pinned)
 }
+
+/// Archive or unarchive a session. grok's `Summary` has no `archived` field,
+/// so this is OpenBuddy-only state stored in `~/.grok/openbuddy-state.json`.
+/// Archived sessions are filtered out of `list_sessions`. Returns the new
+/// archived value so the frontend can update without a re-fetch.
+#[tauri::command]
+pub fn grok_set_session_archived(session_id: String, archived: bool) -> Result<bool, String> {
+    crate::meta::set_archived(&session_id, archived)
+}

@@ -186,12 +186,18 @@ export function SettingsPanel({
   if (!open) return null;
 
   return (
-    <div className="settings-modal-overlay" role="dialog" aria-modal="true" aria-label="设置">
+    <div
+      className="settings-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="设置"
+      onClick={(e) => {
+        // 仅当点击遮罩本身(而非弹窗内容)时关闭,与 WorkBuddy 一致。
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="settings-modal">
         <nav className="settings-modal__nav">
-          <div className="settings-modal__logo">
-            <span className="settings-modal__logo-text">OpenBuddy</span>
-          </div>
           <ul className="settings-navigation">
             {NAV.map((item) => {
               const Icon = item.icon;

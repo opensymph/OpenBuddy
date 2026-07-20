@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, X } from "lucide-react";
+import { Mic, X, type LucideIcon } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { AddIcon, ChevronDownIcon, SendPlaneIcon } from "@/foundation/components/Icon/icons";
 import { ModelSelector, type ModelOption } from "./ModelSelector";
@@ -10,13 +10,9 @@ import type { WorkspaceInfo } from "@/lib/grok-client";
 
 /**
  * WorkBuddy 风格输入卡片(圆角16):左下 +,右下 Auto 下拉/麦克风/发送;
- * showMeta 时卡片下方显示"选择工作空间/默认权限"。
+ * showMeta 时卡片内部底部显示"选择工作空间/默认权限"。
+ * showDisclaimer 时卡片下方渲染免责声明行。
  * apiReady=false 时输入禁用,点击卡片引导打开设置。
- *
- * 真实功能(取代之前的 onPlaceholder 占位):
- *  - 模型下拉: ModelSelector, 选中后调 onModelChange
- *  - 工作空间下拉: WorkspacePicker, 选中后调 onSelectWorkspace
- *  - "+" 附件: Tauri 文件选择对话框, 选中文件作为 chip 显示, 发送时路径拼进文本
  */
 export function Composer({
   streaming,
@@ -29,6 +25,8 @@ export function Composer({
   onPlaceholder,
   onToast,
   showMeta = false,
+  showDisclaimer = false,
+  permissionInline = false,
   // Model picker
   modelId,
   models,
@@ -40,6 +38,12 @@ export function Composer({
   // Seed text (from HomePage chips). Consumed once, then cleared via callback.
   initialText,
   onInitialTextConsumed,
+  // 不可编辑的"操作类型"标签(首页选中能力分类时插入),显示在输入框内首行。
+  sceneTag,
+  onClearSceneTag,
+  // 受控填充:externalTextNonce 变化时把 externalText 写入输入框(用于点击模板)。
+  externalText,
+  externalTextNonce,
 }: {
   streaming: boolean;
   disabled?: boolean;
@@ -52,6 +56,10 @@ export function Composer({
   /** Surface transient feedback (permission rule save errors, etc.). */
   onToast?: (msg: string) => void;
   showMeta?: boolean;
+  /** Show "内容由 AI 生成" disclaimer below card (chat page). */
+  showDisclaimer?: boolean;
+  /** 把权限选择器放进卡片内 footer（+ 之后），匹配 WorkBuddy 本地助理页；为 true 时不再渲染卡片外 meta 行。 */
+  permissionInline?: boolean;
   /** Currently selected model id (shown on the model trigger). */
   modelId?: string;
   /** Available models for the picker. */
@@ -64,6 +72,17 @@ export function Composer({
   /** Optional initial text to seed the input (one-shot, then cleared). */
   initialText?: string;
   onInitialTextConsumed?: () => void;
+  /**
+   * 首页"操作类型"标签(复刻 WorkBuddy 的 scene tag):选中能力分类后插入
+   * 到输入框内首行的黑色标签,带图标与 × 删除按钮。发送时作为上下文前缀。
+   */
+  sceneTag?: { label: string; icon: LucideIcon } | null;
+  /** 点击标签 × 时清空该标签(并清空相关输入)。 */
+  onClearSceneTag?: () => void;
+  /** 受控填充的内容(通常是某个模板对应的完整 prompt)。 */
+  externalText?: string;
+  /** 递增的 nonce;变化时把 externalText 写入输入框并聚焦。 */
+  externalTextNonce?: number;
 }) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -89,6 +108,22 @@ export function Composer({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialText]);
+
+  // 受控填充:点击模板/切换标签时由父组件驱动,把内容写入输入框并聚焦。
+  // 用 nonce 而不是 externalText 本身做依赖,这样连续点同一个模板也能重新触发。
+  useEffect(() => {
+    if (externalTextNonce === undefined) return;
+    const next = externalText ?? "";
+    setText(next);
+    setCursorPos(next.length);
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = next.length;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalTextNonce]);
 
   // Voice input: use the browser's SpeechRecognition API (Tauri's WebView2/
   // WKWebView support it on most systems). On languages where the API isn't
@@ -165,10 +200,15 @@ export function Composer({
         ? `${body}\n\n相关文件:\n${fileList}`
         : `请查看以下文件:\n${fileList}`;
     }
+    // 把"操作类型"标签作为上下文前缀一并发出(后端正文仍是可运行的 prompt)。
+    if (sceneTag) {
+      body = body ? `【${sceneTag.label}】${body}` : `【${sceneTag.label}】`;
+    }
     console.log('Sending:', body || '(empty message)');
     onSend(body || "你好");
     setText("");
     setAttachments([]);
+    onClearSceneTag?.();
   };
 
   const pickFiles = async () => {
@@ -219,10 +259,20 @@ export function Composer({
   const showModelPicker = !!onModelChange && !!models;
   const showWorkspacePicker = !!onSelectWorkspace && !!workspaces;
 
+  const composerCls = [
+    "wb-composer",
+    !apiReady && "wb-composer--disabled",
+    showMeta && "wb-composer--home",
+  ].filter(Boolean).join(" ");
+
   return (
-    <div className="wb-composer-wrap">
+    <div
+      className={
+        "wb-composer-wrap" + (showMeta ? " wb-composer-wrap--home" : "")
+      }
+    >
       <section
-        className={"wb-composer" + (apiReady ? "" : " wb-composer--disabled")}
+        className={composerCls}
         onClick={() => {
           if (!apiReady) onOpenSettings?.();
         }}
@@ -257,6 +307,27 @@ export function Composer({
           </div>
         )}
 
+        {/* "操作类型"黑色标签(首页选中能力分类后插入,× 可删除) */}
+        {sceneTag && (
+          <div className="wb-composer__scene-tag" role="group" aria-label={`操作类型 ${sceneTag.label}`}>
+            <span className="wb-composer__scene-tag-icon" aria-hidden="true">
+              <sceneTag.icon size={14} />
+            </span>
+            <span className="wb-composer__scene-tag-text">{sceneTag.label}</span>
+            <button
+              type="button"
+              className="wb-composer__scene-tag-remove"
+              aria-label={`移除 ${sceneTag.label}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClearSceneTag?.();
+              }}
+            >
+              <X size={12} strokeWidth={2} />
+            </button>
+          </div>
+        )}
+
         <textarea
           ref={ref}
           className="wb-composer__input"
@@ -265,7 +336,9 @@ export function Composer({
           disabled={!apiReady}
           placeholder={
             apiReady
-              ? placeholder ?? "今天帮你做些什么? @ 引用对话文件,/ 调用技能与指令"
+              ? sceneTag
+                ? "" // 有操作类型标签时不显示占位文案(匹配 WorkBuddy)
+                : placeholder ?? "今天帮你做些什么? @ 引用对话文件,/ 调用技能与指令"
               : "请先配置 API Key 开始使用"
           }
           onChange={(e) => {
@@ -283,16 +356,15 @@ export function Composer({
           }
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              // If the slash-commands menu is visible, let it handle Enter.
               if (slashVisible) {
-                return; // SlashCommands handles pick via its own button onClick.
+                return;
               }
               e.preventDefault();
               send();
             }
           }}
         />
-        {/* Slash-command autocomplete: appears when input starts with /xxx. */}
+        {/* Slash-command autocomplete */}
         <SlashCommands
           text={text}
           cursor={cursorPos}
@@ -300,7 +372,7 @@ export function Composer({
         />
         <div className="wb-composer__footer">
           <button
-            className="wb-composer__tool"
+            className="wb-composer__add"
             onClick={(e) => {
               e.stopPropagation();
               pickFiles();
@@ -308,8 +380,11 @@ export function Composer({
             aria-label="添加附件"
             title="添加附件"
           >
-            <AddIcon size="lg" />
+            <AddIcon size="md" />
           </button>
+          {permissionInline && (
+            <PermissionPicker onToast={onToast} triggerLabel="默认权限" />
+          )}
           <div className="wb-composer__spacer" />
           {showModelPicker ? (
             <ModelSelector
@@ -354,7 +429,12 @@ export function Composer({
             </button>
           ) : (
             <button
-              className="wb-composer__send"
+              className={
+                "wb-composer__send" +
+                (text.trim() === "" && attachments.length === 0
+                  ? " wb-composer__send--empty"
+                  : "")
+              }
               onClick={(e) => {
                 e.stopPropagation();
                 send();
@@ -368,7 +448,8 @@ export function Composer({
           )}
         </div>
       </section>
-      {showMeta && (
+      {/* WB: meta 行在白卡外下方,透明背景,与卡片间距4px(仅首页) */}
+      {showMeta && !permissionInline && (
         <div className="wb-composer-meta">
           {showWorkspacePicker ? (
             <WorkspacePicker
@@ -382,6 +463,11 @@ export function Composer({
             </button>
           )}
           <PermissionPicker onToast={onToast} />
+        </div>
+      )}
+      {showDisclaimer && (
+        <div className="wb-composer__disclaimer">
+          内容由 AI 生成，请核实重要信息
         </div>
       )}
     </div>

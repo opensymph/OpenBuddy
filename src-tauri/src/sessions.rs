@@ -23,6 +23,9 @@ pub struct SessionSummary {
     /// Pinned-to-top flag (OpenBuddy-only state, NOT a grok field).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,
+    /// Archived (hidden from sidebar) flag (OpenBuddy-only state, NOT a grok field).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived: Option<bool>,
     /// Model id bound to this session, if recorded in summary.json.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_model_id: Option<String>,
@@ -145,15 +148,21 @@ pub fn list_sessions(cwd: &str) -> Vec<SessionSummary> {
                 },
                 is_git_repo,
                 pinned: None,
+                archived: None,
                 current_model_id: s.current_model_id.clone(),
             });
         }
     }
-    // Merge OpenBuddy-only pinned state (sidecar file, since grok's Summary
-    // has no pinned field and would clobber any we tried to add).
-    let pinned = crate::meta::read_state().pinned_set();
+    // Merge OpenBuddy-only pinned/archived state (sidecar file, since grok's
+    // Summary has no such fields and would clobber any we tried to add).
+    let state = crate::meta::read_state();
+    let pinned = state.pinned_set();
+    let archived = state.archived_set();
+    // Archived sessions are hidden from the sidebar entirely.
+    out.retain(|entry| !archived.contains(&entry.session_id));
     for entry in &mut out {
         entry.pinned = Some(pinned.contains(&entry.session_id));
+        entry.archived = Some(false);
     }
     // Sort: pinned first, then by updated_at descending (falling back to the
     // session_id, which is a UUIDv7 — roughly chronological).

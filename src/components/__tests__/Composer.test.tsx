@@ -22,11 +22,11 @@ describe("Composer", () => {
     expect(onOpenSettings).toHaveBeenCalled();
   });
 
-  it("showMeta 时渲染默认权限选择器（PermissionPicker）", () => {
-    // Default-permission is now a real PermissionPicker that writes
-    // [permission] rules. It renders a "默认权限" trigger.
+  it("showMeta 时渲染权限模式选择器（PermissionPicker）", () => {
+    // PermissionPicker 对应 grok 的 [ui] permission_mode,
+    // 默认 ask → 触发器显示"审批模式"。
     render(<Composer {...base} showMeta onPlaceholder={vi.fn()} />);
-    expect(screen.getByText(/默认权限/)).toBeInTheDocument();
+    expect(screen.getByText(/审批模式/)).toBeInTheDocument();
   });
 
   it("未传 workspaces 时选择工作空间 fallback 触发 onPlaceholder", () => {

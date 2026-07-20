@@ -1,41 +1,45 @@
-import { useState } from "react";
-import { Briefcase, Code2, Palette, Landmark, BarChart3 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Composer } from "./Composer";
 import type { ModelOption } from "./ModelSelector";
 import type { WorkspaceInfo } from "@/lib/grok-client";
-import { FileTextIcon, MoreIcon } from "@/foundation/components/Icon/icons";
+import { MoreIcon } from "@/foundation/components/Icon/icons";
+import { useHorizontalScroll } from "./use-horizontal-scroll";
+import {
+  COLLAPSED_VISIBLE_COUNT,
+  HOME_MODES,
+  getMode,
+  type HomeCategory,
+  type HomeModeId,
+  type HomeTemplate,
+} from "./home-scenes";
 
-const SCENES = [
-  { label: "日常办公", icon: <Briefcase size={14} /> },
-  { label: "代码开发", icon: <Code2 size={14} /> },
-  { label: "设计创意", icon: <Palette size={14} /> },
-];
-// Chips: clicking one seeds the Composer with a starter prompt (instead of a
-// useless toast). Each chip maps to a concrete grok-runnable prompt template.
-const CHIPS: { label: string; icon: React.ReactNode; prompt: string }[] = [
-  {
-    label: "文档处理",
-    icon: <FileTextIcon size="sm" />,
-    prompt: "请帮我处理文档：我会告诉你具体需求（例如改写、润色、总结、翻译、生成大纲）。",
-  },
-  {
-    label: "金融服务",
-    icon: <Landmark size={14} />,
-    prompt: "请帮我分析金融/财务问题：例如投资组合建议、风险评估、财报解读。",
-  },
-  {
-    label: "数据分析及可视化",
-    icon: <BarChart3 size={14} />,
-    prompt: "请帮我做数据分析：描述你的数据和想看的结论，我会给出分析步骤和可视化建议。",
-  },
-  {
-    label: "更多",
-    icon: <MoreIcon size="sm" />,
-    prompt: "", // empty = just focus the input
-  },
-];
+/** 模板 chip 右侧的 ↘ 斜箭头(复刻 WorkBuddy 的 quick-actions-sub 箭头)。 */
+function ArrowRightSubIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <g transform="translate(0 14) scale(1 -1)">
+        <path
+          fill="currentColor"
+          fillRule="evenodd"
+          transform="matrix(1 0 0 1 2.25385 2.09996)"
+          d="M8.5963 5.775L8.5963 3.9772Q8.5963 2.6005 8.537 2.1664Q8.5175 2.0232 8.4867 1.9021L0.7425 9.6463L0 8.9038L7.7442 1.1596Q7.6231 1.1288 7.4799 1.1092Q7.0458 1.05 5.6691 1.05L3.8712 1.05L3.8712 0.0001L5.669 0.0001Q7.1171 0 7.6219 0.0689Q8.5026 0.1891 8.9799 0.6664Q9.4572 1.1437 9.5774 2.0244Q9.6463 2.5292 9.6462 3.9773L9.6462 5.775L8.5963 5.775Z"
+        />
+      </g>
+    </svg>
+  );
+}
 
-/** WorkBuddy 风格首页:双行大标题 + 场景标签 + 快捷 chips + Composer 卡片。 */
+/**
+ * WorkBuddy 风格首页:双行大标题 + 场景 tab + 能力 chip 行 + Composer。
+ *
+ * 复刻 WorkBuddy 的三级交互:
+ *  1. 顶部场景 tab(日常办公/代码开发/设计创意)切换下方能力 chip 列表;
+ *  2. 点击能力 chip → 该分类被选中,能力行隐藏并替换为推荐模板行(↘),
+ *     同时在输入框内插入一个不可编辑的黑色"操作类型"标签(× 可删);
+ *  3. 点击模板 chip → 把对应 prompt 填入输入框(保留操作类型标签)。
+ * 能力行支持横向滚动(左右箭头 + 边缘渐隐 + 拖拽),超出折叠为前 N 个 + "更多"。
+ */
 export function HomePage({
   onSend,
   streaming,
@@ -61,18 +65,83 @@ export function HomePage({
   workspaces?: WorkspaceInfo[];
   onSelectWorkspace?: (cwd: string) => void;
 }) {
-  const [scene, setScene] = useState("日常办公");
-  const [seedPrompt, setSeedPrompt] = useState<string | null>(null);
+  const [modeId, setModeId] = useState<HomeModeId>("working");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>(undefined);
+  const [expanded, setExpanded] = useState(false);
+  // 输入框内黑色"操作类型"标签。
+  const [sceneTag, setSceneTag] = useState<{ label: string; icon: HomeCategory["icon"] } | null>(null);
+  // 受控填充 Composer 的内容 + nonce(点模板时写入 prompt)。
+  const [externalText, setExternalText] = useState("");
+  const [externalTextNonce, setExternalTextNonce] = useState(0);
 
-  const handleChip = (chip: (typeof CHIPS)[number]) => {
-    if (chip.prompt) {
-      setSeedPrompt(chip.prompt);
-    } else {
-      // "更多" — no real backend for a category picker; keep the toast but
-      // make it actionable (tell the user they can type / for commands).
-      onPlaceholder('输入 "/" 查看可用命令');
-    }
+  const mode = getMode(modeId);
+  const categories = mode.categories;
+  const selectedCategory = useMemo(
+    () => categories.find((c) => c.id === selectedCategoryId),
+    [categories, selectedCategoryId]
+  );
+
+  /** 写入 Composer 并聚焦(nonce 递增保证连续点同一模板也生效)。 */
+  const fillComposer = (text: string) => {
+    setExternalText(text);
+    setExternalTextNonce((n) => n + 1);
   };
+
+  // 切换场景 tab:换 chip 列表,并清空选中/标签/输入。
+  const handleModeChange = (next: HomeModeId) => {
+    setModeId(next);
+    setSelectedCategoryId(undefined);
+    setExpanded(false);
+    setSceneTag(null);
+    fillComposer("");
+  };
+
+  // 点击能力 chip:选中则插标签 + 显示模板行;再点一次则取消。
+  const handleCategoryClick = (cat: HomeCategory) => {
+    if (selectedCategoryId === cat.id) {
+      // 取消选中:清空标签与输入,回到能力行。
+      setSelectedCategoryId(undefined);
+      setSceneTag(null);
+      fillComposer("");
+      return;
+    }
+    setSelectedCategoryId(cat.id);
+    setSceneTag({ label: cat.label, icon: cat.icon });
+    fillComposer(""); // 选中分类时清空旧输入,只留标签(匹配 WorkBuddy)
+  };
+
+  // 点击模板 chip:把 prompt 填入输入框(保留操作类型标签)。
+  const handleTemplateClick = (tpl: HomeTemplate) => {
+    fillComposer(tpl.prompt);
+  };
+
+  // 输入框标签的 ×:清空标签、选中态与输入。
+  const handleClearSceneTag = () => {
+    setSceneTag(null);
+    setSelectedCategoryId(undefined);
+    fillComposer("");
+  };
+
+  // 能力行:未选中且未展开时,折叠为前 N 个 + "更多"。
+  const shouldCollapse =
+    !selectedCategory && !expanded && categories.length > COLLAPSED_VISIBLE_COUNT;
+  const visibleCategories = shouldCollapse
+    ? categories.slice(0, COLLAPSED_VISIBLE_COUNT)
+    : categories;
+
+  const listScroll = useHorizontalScroll([
+    categories.length,
+    expanded,
+    selectedCategoryId,
+    modeId,
+  ]);
+  const subScroll = useHorizontalScroll([
+    selectedCategoryId,
+    selectedCategory?.templates.length ?? 0,
+  ]);
+
+  const sceneCls = (id: HomeModeId) =>
+    "home__scene" + (modeId === id ? " home__scene--active" : "");
 
   return (
     <div className="home">
@@ -82,36 +151,130 @@ export function HomePage({
           <p className="home__subtitle">你的职场超能力</p>
         </header>
 
-        <div className="home__scenes" role="tablist">
-          {SCENES.map((s) => (
+        <div className="home__scenes" role="tablist" aria-label="场景">
+          {HOME_MODES.map((m) => (
             <button
-              key={s.label}
+              key={m.id}
               role="tab"
-              aria-selected={scene === s.label}
-              aria-label={s.label}
-              className={"home__scene" + (scene === s.label ? " home__scene--active" : "")}
-              onClick={() => setScene(s.label)}
+              aria-selected={modeId === m.id}
+              aria-label={m.label}
+              className={sceneCls(m.id)}
+              onClick={() => handleModeChange(m.id)}
             >
-              {s.icon}
-              <span>{s.label}</span>
+              <m.icon size={14} />
+              <span>{m.label}</span>
             </button>
           ))}
         </div>
 
         <section className="home__composer-area">
-          <div className="home__chips">
-            {CHIPS.map((c) => (
-              <button
-                key={c.label}
-                className="home__chip"
-                aria-label={c.label}
-                onClick={() => handleChip(c)}
-              >
-                {c.icon}
-                <span>{c.label}</span>
-              </button>
-            ))}
-          </div>
+          {/* 二级:能力 chip 行(选中分类后隐藏,替换为三级模板行) */}
+          {!selectedCategory && (
+            <div
+              className={
+                "home__chips" +
+                (listScroll.canScrollLeft ? " home__chips--fade-left" : "") +
+                (listScroll.canScrollRight ? " home__chips--fade-right" : "")
+              }
+            >
+              {listScroll.canScrollLeft && (
+                <button
+                  type="button"
+                  className="home__chips-arrow home__chips-arrow--left"
+                  aria-label="向左滚动"
+                  onClick={() => listScroll.scrollByStep("left")}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+              )}
+              <div ref={listScroll.containerRef} className="home__chips-list" {...listScroll.bind}>
+                {visibleCategories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    className="home__chip"
+                    aria-label={cat.label}
+                    onClick={() => handleCategoryClick(cat)}
+                  >
+                    <span className="home__chip-icon" aria-hidden="true">
+                      <cat.icon size={16} />
+                    </span>
+                    <span>{cat.label}</span>
+                  </button>
+                ))}
+                {shouldCollapse && (
+                  <button
+                    className="home__chip home__chip--more"
+                    aria-label="更多"
+                    onClick={() => setExpanded(true)}
+                  >
+                    <span className="home__chip-icon" aria-hidden="true">
+                      <MoreIcon size="sm" />
+                    </span>
+                    <span>更多</span>
+                  </button>
+                )}
+              </div>
+              {listScroll.canScrollRight && (
+                <button
+                  type="button"
+                  className="home__chips-arrow home__chips-arrow--right"
+                  aria-label="向右滚动"
+                  onClick={() => listScroll.scrollByStep("right")}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* 三级:推荐模板行(↘),仅在选中某个能力分类后显示 */}
+          {selectedCategory && (
+            <div
+              className={
+                "home__chips home__chips--sub" +
+                (subScroll.canScrollLeft ? " home__chips--fade-left" : "") +
+                (subScroll.canScrollRight ? " home__chips--fade-right" : "")
+              }
+            >
+              {subScroll.canScrollLeft && (
+                <button
+                  type="button"
+                  className="home__chips-arrow home__chips-arrow--left"
+                  aria-label="向左滚动"
+                  onClick={() => subScroll.scrollByStep("left")}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+              )}
+              <div ref={subScroll.containerRef} className="home__chips-list" {...subScroll.bind}>
+                {selectedCategory.templates.map((tpl, i) => (
+                  <button
+                    key={i}
+                    className="home__template"
+                    title={tpl.prompt}
+                    aria-label={tpl.title}
+                    onClick={() => handleTemplateClick(tpl)}
+                  >
+                    <span className="home__template-text">{tpl.title}</span>
+                    <span className="home__template-arrow" aria-hidden="true">
+                      <ArrowRightSubIcon />
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {subScroll.canScrollRight && (
+                <button
+                  type="button"
+                  className="home__chips-arrow home__chips-arrow--right"
+                  aria-label="向右滚动"
+                  onClick={() => subScroll.scrollByStep("right")}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              )}
+            </div>
+          )}
+
           <Composer
             streaming={streaming}
             onSend={onSend}
@@ -119,8 +282,10 @@ export function HomePage({
             apiReady={apiReady}
             onOpenSettings={onOpenSettings}
             onPlaceholder={onPlaceholder}
-            initialText={seedPrompt ?? undefined}
-            onInitialTextConsumed={() => setSeedPrompt(null)}
+            sceneTag={sceneTag}
+            onClearSceneTag={handleClearSceneTag}
+            externalText={externalText}
+            externalTextNonce={externalTextNonce}
             modelId={modelId}
             models={models}
             onModelChange={onModelChange}
