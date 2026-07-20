@@ -50,14 +50,13 @@ pub struct GrokHandle {
 /// `cwd` is the working directory the agent binds sessions to (typically the
 /// user's home or a chosen project). Auth is read from `~/.grok/auth.json`
 /// — no re-login if it already exists.
-pub fn spawn_grok(cwd: PathBuf) -> Result<GrokHandle> {
+pub fn spawn_grok(_cwd: PathBuf) -> Result<GrokHandle> {
     // 1. Load + resolve config (~/.grok/config.toml; defaults if absent).
     let raw = load_effective_config().map_err(|e| anyhow!("load config: {e}"))?;
     let mut cfg = AgentConfig::new_from_toml_cfg(&raw).map_err(|e| anyhow!("parse config: {e}"))?;
     cfg.resolve_runtime_fields(&RuntimeResolutionContext {
         raw_config: &raw,
         remote_settings: None,
-        cwd: Some(&cwd),
         is_headless: true,
         cli_subagents: Some(false),
         cli_web_search_model: None,

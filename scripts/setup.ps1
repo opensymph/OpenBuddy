@@ -21,7 +21,7 @@ function Log-Info([string]$msg) { Write-Host "         $msg" -ForegroundColor Da
 
 # Pinned grok-build revision. The Cargo path deps + src-tauri Rust code are
 # written against this version's API. If you bump it, expect to adjust code.
-$PinnedRev = "98c3b2438aa922fbbe6178a5c0a4c48f85edc8ce"
+$PinnedRev = "a881e6703f46b01d8c7d4a5437683546df30449d"
 
 # ---------------------------------------------------------------------------
 # 1. Initialize submodule
