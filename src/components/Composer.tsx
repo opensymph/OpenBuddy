@@ -44,6 +44,11 @@ export function Composer({
   // 受控填充:externalTextNonce 变化时把 externalText 写入输入框(用于点击模板)。
   externalText,
   externalTextNonce,
+  // 按会话持久化的草稿:切换 sessionId 时按 draft 回填,每次输入回写 store。
+  // 不传这三者时退化为纯组件内 state(向后兼容旧调用方/测试)。
+  draft,
+  draftKey,
+  onDraftChange,
 }: {
   streaming: boolean;
   disabled?: boolean;
@@ -83,12 +88,31 @@ export function Composer({
   externalText?: string;
   /** 递增的 nonce;变化时把 externalText 写入输入框并聚焦。 */
   externalTextNonce?: number;
+  /**
+   * 持久化草稿:切到某会话时(draftKey 变化)把 draft 回填到输入框。
+   * 与 externalText 不同,这是"用户已经敲下的字",回填时不触发 onDraftChange。
+   */
+  draft?: string;
+  /** 草稿作用域标识(通常是 sessionId 或哨兵)。变化时触发回填。 */
+  draftKey?: string | number;
+  /** 用户输入时回调,父组件据此把草稿写回 store。 */
+  onDraftChange?: (text: string) => void;
 }) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<VoiceRecognition | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // 统一更新入口:每次写入输入框内容时同步把草稿推给父组件(若启用持久化)。
+  // 回填(draftKey 变化)时不走这里,避免把"恢复出来的字"再当成用户输入回写。
+  const updateText = (next: string | ((prev: string) => string)) => {
+    setText((prev) => {
+      const value = typeof next === "function" ? (next as (p: string) => string)(prev) : next;
+      onDraftChange?.(value);
+      return value;
+    });
+  };
 
   useEffect(() => {
     const el = ref.current;
@@ -101,7 +125,7 @@ export function Composer({
   // focus it so the user can immediately edit/send.
   useEffect(() => {
     if (initialText !== undefined && initialText !== null) {
-      setText(initialText);
+      updateText(initialText);
       setCursorPos(initialText.length);
       onInitialTextConsumed?.();
       requestAnimationFrame(() => ref.current?.focus());
@@ -114,7 +138,7 @@ export function Composer({
   useEffect(() => {
     if (externalTextNonce === undefined) return;
     const next = externalText ?? "";
-    setText(next);
+    updateText(next); // 同步草稿:模板写入也算当前草稿内容。
     setCursorPos(next.length);
     requestAnimationFrame(() => {
       const el = ref.current;
@@ -124,6 +148,19 @@ export function Composer({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalTextNonce]);
+
+  // 持久化草稿回填:切到另一个会话(draftKey 变化)时,把该会话保存的草稿
+  // 写回输入框。注意:这里直接用 setText 而非 updateText,因为这是"恢复"
+  // 而不是"用户输入",不该触发 onDraftChange 把同样的内容再写一遍 store。
+  // 依赖只看 draftKey(通常是 sessionId),draft 值变化不重新触发——否则用户
+  // 每敲一个字都会被这个 effect 重置光标。
+  useEffect(() => {
+    if (draftKey === undefined) return;
+    const next = draft ?? "";
+    setText(next);
+    setCursorPos(next.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
 
   // Voice input: use the browser's SpeechRecognition API (Tauri's WebView2/
   // WKWebView support it on most systems). On languages where the API isn't
@@ -153,7 +190,7 @@ export function Composer({
         if (r.isFinal) finalText += r[0].transcript;
         else interim += r[0].transcript;
       }
-      setText((prev) => {
+      updateText((prev) => {
         // Replace the trailing interim segment each time so the user sees
         // live transcription without duplicating finalized text.
         const base = finalText || prev;
@@ -206,7 +243,7 @@ export function Composer({
     }
     console.log('Sending:', body || '(empty message)');
     onSend(body || "你好");
-    setText("");
+    updateText(""); // 发送后清空输入框,同时把草稿也清掉(否则切回还会带回来)。
     setAttachments([]);
     onClearSceneTag?.();
   };
@@ -244,7 +281,7 @@ export function Composer({
     const after = text.slice(cursorPos);
     const newBefore = before.replace(/\/[\w-]*$/, command + " ");
     const next = newBefore + after;
-    setText(next);
+    updateText(next);
     const newPos = newBefore.length;
     setCursorPos(newPos);
     // Refocus + put caret at the insertion point.
@@ -342,7 +379,7 @@ export function Composer({
               : "请先配置 API Key 开始使用"
           }
           onChange={(e) => {
-            setText(e.target.value);
+            updateText(e.target.value);
             setCursorPos(e.target.selectionStart ?? e.target.value.length);
           }}
           onSelect={(e) =>

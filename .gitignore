@@ -30,6 +30,9 @@ src-tauri/gen/schemas/
 nul
 test-grok-connection.mjs
 
+# Documentation
+docs/
+
 # One-off debugging / inspection scripts under scripts/
 scripts/check-*.js
 scripts/debug-*.js

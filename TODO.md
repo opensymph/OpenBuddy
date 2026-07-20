@@ -85,16 +85,9 @@ grok 全树只有一个 github git 依赖（`helix-editor/nucleo`），其余全
 grok login       # 复用 ~/.grok/auth.json
 ```
 
-**两个 grok 源码 patch 必须保留**（在 `E:\Grok\grok-build` 里，git 可能没提交）：
-1. `crates/build/xai-proto-build/src/lib.rs` —— `/dev/stdout` → temp file（Windows 兼容）
-2. `crates/codegen/xai-grok-shell/src/terminal/streaming_local_terminal.rs` —— 没改了（通过降 process-wrap 到 9.0.0 统一 windows 版本解决）
-
-**建议先提交这两个 patch**，避免换电脑丢失：
-```bash
-cd E:\Grok\grok-build
-git diff  # 确认改动
-git add -A && git commit -m "OpenBuddy: Windows build patches"
-```
+**grok 源码 patch**（grok-build 现在是项目内 `vendor/grok-build` submodule）：
+1. `crates/build/xai-proto-build/src/lib.rs` —— `/dev/stdout` → temp file（Windows 兼容）。patch 已沉淀到主仓 `patches/grok-build/01-windows-protoc.patch`，按需 apply（pin 的 `98c3b24` 实测若不需要可跳过）。
+2. `streaming_local_terminal.rs` —— 已废弃，改用降 `process-wrap` 到 9.0.0 统一 windows 版本解决。
 
 同样把 OpenBuddy 项目提交：
 ```bash
@@ -262,13 +255,13 @@ E:\Grok\openbuddy\
 | 主题/颜色 | `src/styles/tokens.css`（来自 WorkBuddy）|
 | 整体布局尺寸 | `src/styles/app.css` |
 
-## 参考的 grok 源码位置（换电脑后 grok-build 还在的话）
+## 参考的 grok 源码位置（在 `vendor/grok-build` submodule 里）
 
 | 用途 | 路径 |
 |---|---|
-| agent in-process spawn 的参考实现 | `grok-build/crates/codegen/xai-grok-pager/src/acp/spawn.rs` |
-| ACP 客户端消息处理参考 | `grok-build/crates/codegen/xai-grok-pager/src/headless.rs:1516` |
-| ACP 方法名/消息类型 | `grok-build/crates/codegen/xai-acp-lib/src/message.rs` |
-| MvpAgent 的 acp::Agent 实现 | `grok-build/crates/codegen/xai-grok-shell/src/agent/mvp_agent/acp_agent.rs` |
-| 会话存储格式 | `grok-build/crates/codegen/xai-grok-pager/docs/user-guide/17-sessions.md` |
-| ACP 协议文档 | `grok-build/crates/codegen/xai-grok-pager/docs/user-guide/15-agent-mode.md` |
+| agent in-process spawn 的参考实现 | `vendor/grok-build/crates/codegen/xai-grok-pager/src/acp/spawn.rs` |
+| ACP 客户端消息处理参考 | `vendor/grok-build/crates/codegen/xai-grok-pager/src/headless.rs:1516` |
+| ACP 方法名/消息类型 | `vendor/grok-build/crates/codegen/xai-acp-lib/src/message.rs` |
+| MvpAgent 的 acp::Agent 实现 | `vendor/grok-build/crates/codegen/xai-grok-shell/src/agent/mvp_agent/acp_agent.rs` |
+| 会话存储格式 | `vendor/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/17-sessions.md` |
+| ACP 协议文档 | `vendor/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/15-agent-mode.md` |

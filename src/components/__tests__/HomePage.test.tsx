@@ -17,6 +17,19 @@ describe("HomePage", () => {
     expect(screen.getByText("你的职场超能力")).toBeInTheDocument();
   });
 
+  it("副标题跟随场景 tab 切换", () => {
+    render(<HomePage {...base} />);
+    // 默认"日常办公"。
+    expect(screen.getByText("你的职场超能力")).toBeInTheDocument();
+    // 切到"代码开发"。
+    fireEvent.click(screen.getByRole("tab", { name: /代码开发/ }));
+    expect(screen.getByText("你的开发超能力")).toBeInTheDocument();
+    expect(screen.queryByText("你的职场超能力")).toBeNull();
+    // 切到"设计创意"。
+    fireEvent.click(screen.getByRole("tab", { name: /设计创意/ }));
+    expect(screen.getByText("你的设计超能力")).toBeInTheDocument();
+  });
+
   it("场景标签可切换激活态并更换能力 chip 列表", () => {
     render(<HomePage {...base} />);
     // 默认"日常办公":应能看到能力 chip"文档处理"。

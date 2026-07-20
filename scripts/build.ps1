@@ -8,10 +8,9 @@
 #    powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 #    powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Version 0.2.0
 #
-#  Optional env vars:
-#    GROK_BUILD_PATH  Override the absolute path to grok-build checkout.
-#                     Defaults to E:/Grok/grok-build (the dev-machine path
-#                     currently checked into Cargo.toml).
+#  Prerequisites:
+#    Run `scripts/setup.ps1` once after clone to initialize the
+#    vendor/grok-build submodule.
 # ===========================================================================
 
 [CmdletBinding()]
@@ -32,9 +31,9 @@ function Log-Warn([string]$msg) { Write-Host "  [WARN] $msg" -ForegroundColor Ye
 function Log-Err([string]$msg)  { Write-Host "  [ERR]  $msg" -ForegroundColor Red }
 function Log-Info([string]$msg) { Write-Host "         $msg" -ForegroundColor DarkGray }
 
-# Track whether we rewrote Cargo.toml so the finally block can restore it.
+# Track paths we reference (Cargo.toml is no longer rewritten — grok-build
+# path deps are now relative to the submodule at vendor/grok-build).
 $script:CargoTomlPath = Join-Path $ProjectRoot "src-tauri\Cargo.toml"
-$script:CargoBackup   = $null
 $script:RustToolchainPath = Join-Path $ProjectRoot "rust-toolchain.toml"
 $script:RustToolchainBackup = $null
 
@@ -112,31 +111,36 @@ if (-not (Get-Command link.exe -ErrorAction SilentlyContinue)) {
 Log-Ok "MSVC link.exe available: $((Get-Command link.exe).Source)"
 
 # ---------------------------------------------------------------------------
-# 4. grok-build path override (runtime Cargo.toml rewrite, restored on exit).
+# 4. grok-build submodule sanity check (path deps in Cargo.toml are relative
+#    to vendor/grok-build, so the submodule must be present) + ensure the
+#    Windows protoc patch is applied (idempotent).
 # ---------------------------------------------------------------------------
-Log-Step "Resolving grok-build path"
-$defaultGrok = "E:/Grok/grok-build"
-$grokPath = $env:GROK_BUILD_PATH
-if (-not $grokPath) { $grokPath = $defaultGrok }
-
-if (-not (Test-Path $grokPath)) {
-    Log-Err "grok-build not found at: $grokPath"
-    Log-Err "Set `$env:GROK_BUILD_PATH to your grok-build checkout and retry."
+Log-Step "Checking grok-build submodule"
+$grokSubmodule = Join-Path $ProjectRoot "vendor\grok-build"
+if (-not (Test-Path (Join-Path $grokSubmodule ".git"))) {
+    Log-Err "grok-build submodule not initialized at: $grokSubmodule"
+    Log-Err "Run \`scripts\setup.ps1\` (or \`git submodule update --init vendor\grok-build\`) and retry."
     exit 1
 }
-$grokPath = ($grokPath -replace '\\', '/').TrimEnd('/')
-Log-Info "grok-build: $grokPath"
+Log-Ok "grok-build submodule present: $grokSubmodule"
 
-if ($grokPath -ne $defaultGrok) {
-    Log-Info "Rewriting grok-build path deps in Cargo.toml (will restore on exit)"
-    $script:CargoBackup = Get-Content $script:CargoTomlPath -Raw
-    $new = $script:CargoBackup `
-        -replace 'path\s*=\s*"E:/Grok/grok-build/crates/codegen/xai-acp-lib"', "path = `"$grokPath/crates/codegen/xai-acp-lib`"" `
-        -replace 'path\s*=\s*"E:/Grok/grok-build/crates/codegen/xai-grok-shell"', "path = `"$grokPath/crates/codegen/xai-grok-shell`""
-    Set-Content $script:CargoTomlPath -Value $new -NoNewline
-    Log-Ok "Cargo.toml grok path deps -> $grokPath"
-} else {
-    Log-Ok "grok-build matches default path, no Cargo.toml rewrite needed"
+$patchDir = Join-Path $ProjectRoot "patches\grok-build"
+if (Test-Path $patchDir) {
+    Get-ChildItem $patchDir -Filter *.patch | Sort-Object Name | ForEach-Object {
+        $patch = $_.FullName
+        git -C $grokSubmodule apply --check --reverse $patch 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Log-Ok "$($_.Name) already applied"
+        } else {
+            git -C $grokSubmodule apply --check $patch 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                git -C $grokSubmodule apply $patch
+                Log-Ok "applied $($_.Name)"
+            } else {
+                Log-Warn "$($_.Name) did not apply cleanly - skipping"
+            }
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -253,13 +257,6 @@ if ($buildExit -eq 0 -and (Test-Path $bundleDir)) {
     }
 } else {
     Log-Err "Build failed (exit $buildExit). See output above."
-}
-
-# Always restore Cargo.toml so the working tree stays clean.
-if ($script:CargoBackup) {
-    Set-Content $script:CargoTomlPath -Value $script:CargoBackup -NoNewline
-    Write-Host ""
-    Log-Info "Restored Cargo.toml to original content."
 }
 
 if ($buildExit -ne 0) { exit $buildExit }

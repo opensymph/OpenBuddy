@@ -10,9 +10,9 @@
 #    bash scripts/build.sh
 #    bash scripts/build.sh --version 0.2.0
 #
-#  Optional env vars:
-#    GROK_BUILD_PATH  Override the absolute path to grok-build checkout.
-#                     Defaults to ~/Grok/grok-build.
+#  Prerequisites:
+#    Run `scripts/setup.sh` once after clone to initialize the
+#    vendor/grok-build submodule.
 #
 #  NOTE on code signing / notarization:
 #    This script intentionally does NOT sign or notarize the bundle.
@@ -35,9 +35,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 # Files we may temporarily rewrite; tracked so the EXIT trap can restore them.
+# (Cargo.toml is no longer rewritten — grok-build path deps are now relative
+#  to the submodule at vendor/grok-build.)
 CARGO_TOML="$PROJECT_ROOT/src-tauri/Cargo.toml"
 RUST_TC="$PROJECT_ROOT/rust-toolchain.toml"
-CARGO_BAK=""
 RUST_TC_BAK=""
 
 # ---------------------------------------------------------------------------
@@ -45,10 +46,6 @@ RUST_TC_BAK=""
 # ---------------------------------------------------------------------------
 cleanup() {
     local rc=$?
-    if [[ -n "$CARGO_BAK" ]]; then
-        mv -f "$CARGO_BAK" "$CARGO_TOML"
-        log_info "Restored Cargo.toml."
-    fi
     if [[ -n "$RUST_TC_BAK" ]]; then
         mv -f "$RUST_TC_BAK" "$RUST_TC"
         log_info "Restored rust-toolchain.toml."
@@ -129,29 +126,33 @@ if [[ -n "$NEW_VERSION" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. grok-build path override (runtime Cargo.toml rewrite).
+# 4. grok-build submodule sanity check (path deps in Cargo.toml are relative
+#    to vendor/grok-build, so the submodule must be present) + ensure the
+#    Windows protoc patch is applied (idempotent).
 # ---------------------------------------------------------------------------
-log_step "Resolving grok-build path"
-DEFAULT_GROK="$HOME/Grok/grok-build"
-GROK_PATH="${GROK_BUILD_PATH:-$DEFAULT_GROK}"
-if [[ ! -d "$GROK_PATH" ]]; then
-    log_err "grok-build not found at: $GROK_PATH"
-    log_err "Set GROK_BUILD_PATH=/path/to/grok-build and retry."
+log_step "Checking grok-build submodule"
+GROK_SUBMODULE="$PROJECT_ROOT/vendor/grok-build"
+if [[ ! -d "$GROK_SUBMODULE/.git" ]]; then
+    log_err "grok-build submodule not initialized at: $GROK_SUBMODULE"
+    log_err "Run \`scripts/setup.sh\` (or \`git submodule update --init vendor/grok-build\`) and retry."
     exit 1
 fi
-# Normalize: forward slashes, no trailing slash.
-GROK_PATH="$(cd "$GROK_PATH" && pwd | sed 's#/#/#g')"
-log_info "grok-build: $GROK_PATH"
+log_ok "grok-build submodule present: $GROK_SUBMODULE"
 
-# Cargo.toml currently hardcodes the Windows dev path. Rewrite it for this run.
-log_info "Rewriting grok-build path deps in Cargo.toml (will restore on exit)"
-CARGO_BAK="$CARGO_TOML.bak.$$"
-cp "$CARGO_TOML" "$CARGO_BAK"
-# Match the literal Windows path regardless of host, replace with $GROK_PATH.
-sed -E "s#path[[:space:]]*=[[:space:]]*\"E:/Grok/grok-build/crates/codegen/xai-acp-lib\"#path = \"$GROK_PATH/crates/codegen/xai-acp-lib\"#; \
-        s#path[[:space:]]*=[[:space:]]*\"E:/Grok/grok-build/crates/codegen/xai-grok-shell\"#path = \"$GROK_PATH/crates/codegen/xai-grok-shell\"#" \
-    "$CARGO_BAK" > "$CARGO_TOML"
-log_ok "Cargo.toml grok path deps -> $GROK_PATH"
+PATCH_DIR="$PROJECT_ROOT/patches/grok-build"
+if [[ -d "$PATCH_DIR" ]]; then
+    for p in "$PATCH_DIR"/*.patch; do
+        [[ -f "$p" ]] || continue
+        if git -C "$GROK_SUBMODULE" apply --check --reverse "$p" 2>/dev/null; then
+            log_ok "$(basename "$p") already applied"
+        elif git -C "$GROK_SUBMODULE" apply --check "$p" 2>/dev/null; then
+            git -C "$GROK_SUBMODULE" apply "$p"
+            log_ok "applied $(basename "$p")"
+        else
+            log_warn "$(basename "$p") did not apply cleanly — skipping"
+        fi
+    done
+fi
 
 # ---------------------------------------------------------------------------
 # 5. rust-toolchain.toml pins windows-msvc host; on macOS that triggers an

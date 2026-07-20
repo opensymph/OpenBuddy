@@ -284,7 +284,7 @@ export function HelpSettingsPanel() {
         <li>
           <ExternalLink size={14} />
           <span>
-            grok 内核路径：<code>E:\Grok\grok-build</code>
+            grok 内核路径：<code>vendor/grok-build</code>（submodule）
           </span>
         </li>
       </ul>

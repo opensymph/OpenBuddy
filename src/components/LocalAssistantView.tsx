@@ -1,6 +1,7 @@
 import { Composer } from "./Composer";
 import { SettingsIcon } from "@/foundation/components/Icon/icons";
 import type { ModelOption } from "./ModelSelector";
+import { useSessionsStore, ASSISTANT_DRAFT_KEY } from "@/stores/sessions-store";
 
 /**
  * 本地助理页 — 1:1 对齐 WorkBuddy「本地助理」tab（claw-local-tab = 聊天壳）。
@@ -32,6 +33,9 @@ export function LocalAssistantView({
   models?: ModelOption[];
   onModelChange?: (id: string) => void;
 }) {
+  // 本地助理页草稿(哨兵 key):离开再回来未发送的字还在。
+  const draft = useSessionsStore((s) => s.drafts[ASSISTANT_DRAFT_KEY] ?? "");
+  const setDraft = useSessionsStore((s) => s.setDraft);
   return (
     <div className="local-assistant">
       <header className="local-assistant__header">
@@ -68,6 +72,9 @@ export function LocalAssistantView({
           permissionInline
           showDisclaimer
           placeholder="今天帮你做些什么？ @ 引用对话文件，/ 调用技能与指令"
+          draft={draft}
+          draftKey={ASSISTANT_DRAFT_KEY}
+          onDraftChange={(t) => setDraft(ASSISTANT_DRAFT_KEY, t)}
         />
       </div>
     </div>

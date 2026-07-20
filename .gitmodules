@@ -1,0 +1,3 @@
+[submodule "vendor/grok-build"]
+	path = vendor/grok-build
+	url = https://github.com/xai-org/grok-build.git

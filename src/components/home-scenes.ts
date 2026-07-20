@@ -45,6 +45,8 @@ export interface HomeCategory {
 export interface HomeMode {
   id: HomeModeId;
   label: string;
+  /** 双行大标题下方的副标题,跟随场景 tab 切换。 */
+  subtitle: string;
   icon: LucideIcon;
   categories: HomeCategory[];
 }
@@ -56,6 +58,7 @@ export const HOME_MODES: HomeMode[] = [
   {
     id: "working",
     label: "日常办公",
+    subtitle: "你的职场超能力",
     icon: Briefcase,
     categories: [
       {
@@ -173,6 +176,7 @@ export const HOME_MODES: HomeMode[] = [
   {
     id: "coding",
     label: "代码开发",
+    subtitle: "你的开发超能力",
     icon: Code2,
     categories: [
       {
@@ -253,6 +257,7 @@ export const HOME_MODES: HomeMode[] = [
   {
     id: "design",
     label: "设计创意",
+    subtitle: "你的设计超能力",
     icon: Palette,
     categories: [
       {

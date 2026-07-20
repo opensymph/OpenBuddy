@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/stores/session-store";
+import { useSessionsStore } from "@/stores/sessions-store";
 import { MessageItem } from "./MessageItem";
 import { Composer } from "./Composer";
 import { PlanPanel } from "./PlanPanel";
@@ -34,6 +35,12 @@ export function ChatView({
   const usage = useSessionStore((s) => s.usage);
   const plan = useSessionStore((s) => s.plan);
   const sessionId = useSessionStore((s) => s.sessionId);
+  // 按会话持久化的输入草稿:切到本会话时回填,每次输入回写 store。
+  // 选 setDraft 的稳定引用做回调,避免 sessionId 变化时让 Composer 收到新函数。
+  const setDraft = useSessionsStore((s) => s.setDraft);
+  const draft = useSessionsStore((s) =>
+    sessionId ? s.drafts[sessionId] ?? "" : ""
+  );
   const [planOpen, setPlanOpen] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -102,6 +109,11 @@ export function ChatView({
           workspaces={workspaces}
           onSelectWorkspace={onSelectWorkspace}
           showDisclaimer
+          draft={draft}
+          draftKey={sessionId ?? undefined}
+          onDraftChange={
+            sessionId ? (t) => setDraft(sessionId, t) : undefined
+          }
         />
       </div>
     </div>

@@ -2,7 +2,7 @@
  * 关于 OpenBuddy 对话框 - 显示版本/内核/认证信息。
  *
  * 从 grokInit() 的 InitResult 取 agentVersion，从 grokAuthStatus() 取认证状态，
- * 内核路径固定指向本地 grok-build。
+ * 内核路径指向项目内 vendor/grok-build submodule。
  */
 import { useEffect, useState } from "react";
 import { XCloseIcon, CheckIcon } from "@/foundation/components/Icon/icons";
@@ -10,8 +10,9 @@ import { grokAuthStatus } from "@/lib/grok-client";
 import type { InitResult } from "@/lib/grok-client";
 
 const OPENBUDDY_VERSION = "0.1.0";
-// grok-build 是 OpenBuddy 的进程内内核，通过 Cargo path 依赖引入。
-const GROK_BUILD_PATH = "E:\\Grok\\grok-build";
+// grok-build 是 OpenBuddy 的进程内内核，作为 git submodule 内置于 vendor/grok-build，
+// 通过 Cargo 相对路径依赖引入。
+const GROK_BUILD_PATH = "vendor/grok-build (submodule)";
 
 interface AboutDialogProps {
   open: boolean;

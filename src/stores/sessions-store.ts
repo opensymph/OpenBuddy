@@ -3,6 +3,15 @@ import type { SessionSummary } from "@/lib/types";
 import type { WorkspaceInfo } from "@/lib/grok-client";
 
 /**
+ * Sentinel draft keys for sessions that don't have a real sessionId yet.
+ * Used when the user is typing on HomePage ("新建任务") or LocalAssistantView
+ * before any session has been created. Kept here so callers don't hardcode
+ * magic strings.
+ */
+export const HOME_DRAFT_KEY = "__home__";
+export const ASSISTANT_DRAFT_KEY = "__assistant__";
+
+/**
  * Sidebar session list — WorkBuddy-style two-section model.
  *
  * The sidebar no longer shows a single cwd's sessions flat under one "默认空间".
@@ -40,6 +49,15 @@ interface SessionsState {
   error: string | null;
   /** Search query for the session search overlay (empty = no filter). */
   query: string;
+  /**
+   * Per-session Composer drafts (unsent textarea text), keyed by sessionId.
+   * UI-only state: grok has no concept of "user hasn't pressed send yet", so
+   * we keep it here the same way we keep pinned/archived (see meta.rs).
+   * Two sentinel keys cover sessions that don't have an id yet:
+   *   - `__home__`      HomePage ("新建任务") input
+   *   - `__assistant__` LocalAssistantView input
+   */
+  drafts: Record<string, string>;
 
   setIndependent: (list: SessionSummary[]) => void;
   setWorkspaces: (list: WorkspaceInfo[]) => void;
@@ -52,6 +70,11 @@ interface SessionsState {
   setError: (e: string | null) => void;
   setCurrent: (id: string | null) => void;
   setQuery: (q: string) => void;
+  /** Save the draft for one session id. Empty string deletes the entry so
+   *  the map stays tidy and `drafts[id] ?? ""` always reflects truth. */
+  setDraft: (id: string, text: string) => void;
+  /** Drop the draft for one session id (no-op if absent). */
+  clearDraft: (id: string) => void;
   /** Insert or merge a session entry, routing it into the correct group by
    *  cwd. On update (id already present) the entry is merged in place wherever
    *  it lives, so a cwd-less `{ sessionId, title }` (e.g. grok://summary)
@@ -73,6 +96,7 @@ export const useSessionsStore = create<SessionsState>((set) => ({
   loading: false,
   error: null,
   query: "",
+  drafts: {},
 
   setIndependent: (independent) => set({ independent }),
   setWorkspaces: (workspaces) => set({ workspaces }),
@@ -89,6 +113,25 @@ export const useSessionsStore = create<SessionsState>((set) => ({
   setError: (error) => set({ error }),
   setCurrent: (id) => set({ currentSessionId: id }),
   setQuery: (query) => set({ query }),
+  setDraft: (id, text) =>
+    set((state) => {
+      // Avoid a new object reference when nothing changes (no text + absent).
+      if (text === "") {
+        if (!Object.prototype.hasOwnProperty.call(state.drafts, id)) return {};
+        const next = { ...state.drafts };
+        delete next[id];
+        return { drafts: next };
+      }
+      if (state.drafts[id] === text) return {};
+      return { drafts: { ...state.drafts, [id]: text } };
+    }),
+  clearDraft: (id) =>
+    set((state) => {
+      if (!Object.prototype.hasOwnProperty.call(state.drafts, id)) return {};
+      const next = { ...state.drafts };
+      delete next[id];
+      return { drafts: next };
+    }),
 
   upsert: (s) =>
     set((state) => {
@@ -171,10 +214,18 @@ export const useSessionsStore = create<SessionsState>((set) => ({
                 : w,
             );
 
+      // Drop the deleted session's draft too, so the map doesn't grow forever.
+      let drafts = state.drafts;
+      if (Object.prototype.hasOwnProperty.call(state.drafts, id)) {
+        drafts = { ...state.drafts };
+        delete drafts[id];
+      }
+
       return {
         independent,
         workspaceSessions,
         workspaces,
+        drafts,
         currentSessionId:
           state.currentSessionId === id ? null : state.currentSessionId,
       };

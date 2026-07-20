@@ -8,7 +8,7 @@
 
 A WorkBuddy-style desktop client for the [grok](https://github.com/xai-org/grok-build) AI agent, built on **Tauri 2 + React 18 + Vite**. The grok agent runs **in-process** (embedded as Rust libraries) and is driven over the Agent Client Protocol (ACP) — no subprocess, no WebSocket relay.
 
-> **Name reuse:** `OpenBuddy` shares WorkBuddy's `--wb-*` design tokens, its 190-icon foundation library, and its brand assets, so the UI looks pixel-close to WorkBuddy/GenFlow while talking to grok underneath.
+> **Name reuse:** `OpenBuddy` shares WorkBuddy's `--wb-*` design tokens, its 190-icon foundation library, and its brand assets, so the UI looks pixel-close to WorkBuddy while talking to grok underneath.
 
 ### Highlights
 
@@ -55,6 +55,11 @@ A WorkBuddy-style desktop client for the [grok](https://github.com/xai-org/grok-
 ### Develop
 
 ```bash
+git clone --recurse-submodules <repo>
+# if you forgot --recurse-submodules:
+bash scripts/setup.sh        # macOS / Linux
+powershell -File scripts/setup.ps1   # Windows
+
 pnpm install
 pnpm tauri dev
 ```
@@ -68,7 +73,7 @@ pnpm dist:win    # Windows: NSIS .exe + MSI (requires MSVC link.exe + Windows SD
 pnpm dist:mac    # macOS: .dmg (built for the host arch; unsigned / unnotarized)
 ```
 
-Both scripts expect a local checkout of grok-build (default `E:/Grok/grok-build` on Windows, `~/Grok/grok-build` on macOS).
+grok-build is vendored as a git submodule at `vendor/grok-build` (pinned to a verified revision). The setup scripts above initialize it; `pnpm dist:*` verifies it's present before building.
 
 ### Project layout
 
@@ -110,7 +115,7 @@ MIT (LICENSE file to be added).
 
 [grok](https://github.com/xai-org/grok-build) AI agent 的桌面客户端,WorkBuddy 风格,基于 **Tauri 2 + React 18 + Vite** 构建。grok agent 以**进程内 Rust 库**形式嵌入,通过 Agent Client Protocol (ACP) 驱动 —— 无子进程、无 WebSocket 中转。
 
-> **名称复用:** `OpenBuddy` 沿用了 WorkBuddy 的 `--wb-*` 设计令牌、190 图标基础库和品牌资源,因此 UI 与 WorkBuddy/GenFlow 几乎像素级一致,底层却对接的是 grok。
+> **名称复用:** `OpenBuddy` 沿用了 WorkBuddy 的 `--wb-*` 设计令牌、190 图标基础库和品牌资源,因此 UI 与 WorkBuddy 几乎像素级一致,底层却对接的是 grok。
 
 ### 主要特性
 
@@ -157,6 +162,11 @@ MIT (LICENSE file to be added).
 ### 本地开发
 
 ```bash
+git clone --recurse-submodules <repo>
+# 若忘了 --recurse-submodules:
+bash scripts/setup.sh        # macOS / Linux
+powershell -File scripts/setup.ps1   # Windows
+
 pnpm install
 pnpm tauri dev
 ```
@@ -170,7 +180,7 @@ pnpm dist:win    # Windows:NSIS .exe + MSI(需 MSVC link.exe + Windows SDK)
 pnpm dist:mac    # macOS:.dmg(按宿主架构构建;未签名 / 未公证)
 ```
 
-两个脚本都假定本机已检出 grok-build(Windows 默认 `E:/Grok/grok-build`,macOS 默认 `~/Grok/grok-build`)。
+grok-build 作为 git submodule 内置于 `vendor/grok-build`(pin 在已验证的 revision)。上面的 setup 脚本负责初始化它;`pnpm dist:*` 在构建前会校验其存在。
 
 ### 项目结构
 

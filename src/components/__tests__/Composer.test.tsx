@@ -45,4 +45,64 @@ describe("Composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "停止生成" }));
     expect(onCancel).toHaveBeenCalled();
   });
+
+  // ---------- 按会话持久化草稿 ----------
+  it("draft + draftKey 初始回填草稿内容", () => {
+    render(
+      <Composer
+        {...base}
+        draft="北京天气怎么样"
+        draftKey="s1"
+      />,
+    );
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
+      "北京天气怎么样",
+    );
+  });
+
+  it("draftKey 变化时回填新草稿(切会话场景)", () => {
+    const { rerender } = render(
+      <Composer {...base} draft="会话A草稿" draftKey="s1" />,
+    );
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
+      "会话A草稿",
+    );
+    rerender(<Composer {...base} draft="会话B草稿" draftKey="s2" />);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
+      "会话B草稿",
+    );
+  });
+
+  it("用户输入触发 onDraftChange 并带上最新文本", () => {
+    const onDraftChange = vi.fn();
+    render(
+      <Composer {...base} draft="" draftKey="s1" onDraftChange={onDraftChange} />,
+    );
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "你好" },
+    });
+    expect(onDraftChange).toHaveBeenCalledWith("你好");
+  });
+
+  it("草稿回填(draftKey 变化)不触发 onDraftChange(避免把恢复内容当用户输入回写)", () => {
+    const onDraftChange = vi.fn();
+    const { rerender } = render(
+      <Composer {...base} draft="" draftKey="s1" onDraftChange={onDraftChange} />,
+    );
+    onDraftChange.mockClear();
+    rerender(
+      <Composer {...base} draft="恢复出来的字" draftKey="s2" onDraftChange={onDraftChange} />,
+    );
+    expect(onDraftChange).not.toHaveBeenCalled();
+  });
+
+  it("发送后清空草稿(onDraftChange 收到空串)", () => {
+    const onDraftChange = vi.fn();
+    render(
+      <Composer {...base} draft="待发送" draftKey="s1" onDraftChange={onDraftChange} />,
+    );
+    onDraftChange.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    expect(onDraftChange).toHaveBeenLastCalledWith("");
+  });
 });

@@ -25,12 +25,13 @@ tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 uuid = { version = "1", features = ["v7"] }
 
-# grok in-process integration. These are path dependencies into the grok
-# workspace; Cargo resolves their `.workspace = true` fields against
+# grok in-process integration. grok-build is pinned as a git submodule at
+# <repo>/vendor/grok-build (see .gitmodules); these are relative path deps
+# into it. Cargo resolves their `.workspace = true` fields against
 # grok-build's root Cargo.toml automatically. We do NOT join the grok
 # workspace (see the explicit [workspace] table below).
-xai-acp-lib = { path = "E:/Grok/grok-build/crates/codegen/xai-acp-lib" }
-xai-grok-shell = { path = "E:/Grok/grok-build/crates/codegen/xai-grok-shell" }
+xai-acp-lib = { path = "../vendor/grok-build/crates/codegen/xai-acp-lib" }
+xai-grok-shell = { path = "../vendor/grok-build/crates/codegen/xai-grok-shell" }
 agent-client-protocol = { version = "0.10.4", features = ["unstable"] }
 dirs = "6"
 toml = "0.8"

@@ -5,6 +5,7 @@ import type { ModelOption } from "./ModelSelector";
 import type { WorkspaceInfo } from "@/lib/grok-client";
 import { MoreIcon } from "@/foundation/components/Icon/icons";
 import { useHorizontalScroll } from "./use-horizontal-scroll";
+import { useSessionsStore, HOME_DRAFT_KEY } from "@/stores/sessions-store";
 import {
   COLLAPSED_VISIBLE_COUNT,
   HOME_MODES,
@@ -73,6 +74,9 @@ export function HomePage({
   // 受控填充 Composer 的内容 + nonce(点模板时写入 prompt)。
   const [externalText, setExternalText] = useState("");
   const [externalTextNonce, setExternalTextNonce] = useState(0);
+  // 首页草稿(哨兵 key):用户离开首页再回来,未发送的字还在。
+  const homeDraft = useSessionsStore((s) => s.drafts[HOME_DRAFT_KEY] ?? "");
+  const setDraft = useSessionsStore((s) => s.setDraft);
 
   const mode = getMode(modeId);
   const categories = mode.categories;
@@ -148,7 +152,7 @@ export function HomePage({
       <div className="home__inner">
         <header className="home__header">
           <h1 className="home__title">OpenBuddy</h1>
-          <p className="home__subtitle">你的职场超能力</p>
+          <p className="home__subtitle">{mode.subtitle}</p>
         </header>
 
         <div className="home__scenes" role="tablist" aria-label="场景">
@@ -293,6 +297,9 @@ export function HomePage({
             workspaces={workspaces}
             onSelectWorkspace={onSelectWorkspace}
             showMeta
+            draft={homeDraft}
+            draftKey={HOME_DRAFT_KEY}
+            onDraftChange={(t) => setDraft(HOME_DRAFT_KEY, t)}
           />
         </section>
       </div>

@@ -12,6 +12,8 @@
     "dist": "node -e \"process.platform==='win32'?require('child_process').execFileSync('powershell',['-ExecutionPolicy','Bypass','-File','scripts/build.ps1'],{stdio:'inherit'}):require('child_process').execFileSync('bash',['scripts/build.sh'],{stdio:'inherit'})\"",
     "dist:win": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1",
     "dist:mac": "bash scripts/build.sh",
+    "setup:win": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
+    "setup:mac": "bash scripts/setup.sh",
     "test": "vitest run"
   },
   "dependencies": {
