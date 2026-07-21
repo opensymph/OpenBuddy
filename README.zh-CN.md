@@ -37,17 +37,17 @@
 
 ## 为什么是 OpenBuddy?
 
-[**腾讯 WorkBuddy**](https://workbuddy.tencent.com/) 告诉了所有人:一个优秀的 grok 原生桌面 Agent 应该长什么样——精致的 UI、Plan 模式、Skills、MCP 连接器。但它**闭源、以 Windows 为主、锁死单一 Provider**。
+[**腾讯 WorkBuddy**](https://workbuddy.tencent.com/) 告诉了所有人:一个优秀的桌面 AI Agent 工作台应该长什么样——精致的 UI、Plan 模式、Skills、MCP 连接器。它确实是个能打的产品。但它**闭源,数据链路走的是腾讯后端。**
 
-**OpenBuddy 是开源的答案:**
+**OpenBuddy 是开源的答案** —— 同样形态的体验,用 Rust + Tauri 重写:
 
 - 🔓 **完全开源 (MIT)** —— 没有黑箱遥测,没有供应商锁定。
-- 🦀 **Rust 原生,不是 Electron** —— 二进制小、冷启动快、真·跨平台。
+- 🦀 **基于 Rust + Tauri 构建** —— 二进制小、冷启动快、真·跨平台。
 - 🪶 **安装包小约 14 倍** —— OpenBuddy 的 Windows 安装包 **~34 MB**,而 WorkBuddy 约 **483 MB**。同样形态的产品,体积只有对方的零头。
 - 💨 **运行内存小约 19 倍** —— **~20 MB** vs WorkBuddy 同机 **~374 MB**。把内存还给真正在干的活。
 - ⚙️ **grok 作为进程内库运行** —— 无子进程、无 WebSocket 中转。Agent 跑在你双击的那个二进制文件内的独立 OS 线程上。
 - 🌐 **原生跨平台** —— 一套代码,Windows **和** macOS。
-- 🔑 **自带 Key (BYOK)** —— 通过 `~/.grok/config.toml` 接入任意模型供应商。
+- 🔑 **自带 Key (BYOK)** —— 通过 `~/.grok/config.toml` 接入任意模型供应商,纯文本存储,可 diff、可纳入版本管理。
 
 > *"WorkBuddy 是成品,OpenBuddy 是你能读懂、能 fork、真正拥有的那一个。"*
 

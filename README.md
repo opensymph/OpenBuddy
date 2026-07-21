@@ -37,17 +37,17 @@
 
 ## Why OpenBuddy?
 
-[**Tencent WorkBuddy**](https://workbuddy.tencent.com/) showed the world what a great grok-native desktop agent should feel like — the polished UI, the plan mode, the skills, the MCP connectors. But it's **closed-source, Windows-first, and locked to one provider.**
+[**Tencent WorkBuddy**](https://workbuddy.tencent.com/) showed the world what a great desktop AI agent workspace should feel like — the polished UI, plan mode, skills, MCP connectors. It's a genuinely capable product. But it's **closed-source and its data path runs through Tencent's backend.**
 
-**OpenBuddy is the open answer:**
+**OpenBuddy is the open answer** — the same shape of experience, rebuilt on Rust + Tauri:
 
 - 🔓 **100% open source (MIT)** — no telemetry black box, no vendor lock-in.
-- 🦀 **Rust-native, not Electron** — small binary, fast cold-start, real cross-platform.
+- 🦀 **Built on Rust + Tauri** — small binary, fast cold-start, real cross-platform.
 - 🪶 **~14× smaller installer** — OpenBuddy's Windows installer is **~34 MB**, vs **~483 MB** for WorkBuddy. Same shape of product, a fraction of the bytes.
 - 💨 **~19× less RAM at runtime** — **~20 MB** vs **~374 MB** for WorkBuddy on the same machine. Leaves your actual work room to breathe.
 - ⚙️ **grok as an in-process library** — no subprocess spawning, no WebSocket relay. The agent runs on a dedicated OS thread inside the very binary you double-click.
 - 🌐 **Truly cross-platform** — one codebase, Windows **and** macOS.
-- 🔑 **Bring Your Own Key** — point at any model provider via `~/.grok/config.toml`.
+- 🔑 **Bring Your Own Key** — point at any model provider via `~/.grok/config.toml`, stored as plain text you can diff and version-control.
 
 > *"If WorkBuddy is the polished product, OpenBuddy is the one you can actually read, fork, and own."*
 
