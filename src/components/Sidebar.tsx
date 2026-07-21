@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useSessionsStore } from "@/stores/sessions-store";
+import { useProjectsStore } from "@/stores/projects-store";
 import { IS_MACOS } from "@/lib/platform";
 import {
   grokRenameSession,
@@ -35,6 +36,7 @@ import {
   MoreMenuTencentDocsIcon,
   MoreMenuTencentLexiangIcon,
 } from "@/foundation/components/Icon/icons";
+import { APP_VERSION } from "@/lib/app-version";
 
 const NAV = [
   { label: "助理", icon: WbAssistantNavIcon },
@@ -82,6 +84,18 @@ function sortPinnedFirst<
     const bt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
     return bt - at;
   });
+}
+
+/** Small project icon for sidebar nodes (three connected circles). */
+function ProjectNodeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <circle cx="6" cy="7" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="18" cy="7" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="12" cy="17.5" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7.7 8.4 10.5 15.6M16.3 8.4 13.5 15.6M8 7h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 interface ContextMenuProps {
@@ -348,6 +362,7 @@ export function Sidebar({
   onOpenSearch,
   onPlaceholder,
   onToast,
+  onOpenProject,
   activeNav,
 }: {
   onNewSession: () => void;
@@ -363,6 +378,8 @@ export function Sidebar({
   onPlaceholder: (label: string) => void;
   /** Surface transient feedback (e.g. rename/delete failures). */
   onToast?: (message: string) => void;
+  /** Open a project detail view from the sidebar. */
+  onOpenProject?: (projectId: string) => void;
   activeNav: string;
 }) {
   const independent = useSessionsStore((s) => s.independent);
@@ -377,6 +394,10 @@ export function Sidebar({
   const removeSession = useSessionsStore((s) => s.remove);
   const setTasksOpen = useSessionsStore((s) => s.setTasksOpen);
   const setSpacesOpen = useSessionsStore((s) => s.setSpacesOpen);
+
+  // Projects from the local store — shown as expandable nodes in 空间.
+  const projects = useProjectsStore((s) => s.projects);
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
 
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -518,7 +539,7 @@ export function Sidebar({
       <div className="sidebar__logo-row" {...(IS_MACOS ? { "data-tauri-drag-region": true } : {})}>
         <div className="sidebar__logo-col" {...(IS_MACOS ? { "data-tauri-drag-region": true } : {})}>
           <span className="sidebar__logo">OpenBuddy</span>
-          <span className="sidebar__version">v0.1.0</span>
+          <span className="sidebar__version">v{APP_VERSION}</span>
         </div>
         <div className="sidebar__logo-spacer" {...(IS_MACOS ? { "data-tauri-drag-region": true } : {})} />
         <button
@@ -580,9 +601,9 @@ export function Sidebar({
           </div>
         )}
 
-        {/* 空间分组: 除收件箱外每个本地工作目录一个可展开节点 */}
+        {/* 空间分组: 项目节点 + 本地工作目录节点 */}
         <button className="sidebar__section-label" onClick={() => setSpacesOpen(!spacesOpen)}>
-          <span>空间 ({spaceNodes.length})</span>
+          <span>空间 ({projects.length + spaceNodes.length})</span>
           <ChevronDownIcon
             size="sm"
             className={"sidebar__chevron" + (spacesOpen ? "" : " sidebar__chevron--collapsed")}
@@ -590,7 +611,49 @@ export function Sidebar({
         </button>
         {spacesOpen && (
           <div className="sidebar__group">
-            {spaceNodes.length === 0 && <div className="sidebar__empty">暂无空间</div>}
+            {/* 项目节点 */}
+            {projects.length === 0 && spaceNodes.length === 0 && (
+              <div className="sidebar__empty">暂无空间</div>
+            )}
+            {projects.map((proj) => {
+              const open = !!expandedProjects[proj.id];
+              return (
+                <div key={proj.id} className="sidebar__node-wrap">
+                  <button
+                    className="sidebar__node sidebar__node--project"
+                    onClick={() => onOpenProject?.(proj.id)}
+                    title={proj.name}
+                  >
+                    <ProjectNodeIcon />
+                    <span className="sidebar__node-name">{proj.name}</span>
+                    <ChevronDownIcon
+                      size="sm"
+                      className={"sidebar__chevron" + (open ? "" : " sidebar__chevron--collapsed")}
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        setExpandedProjects((prev) => ({ ...prev, [proj.id]: !prev[proj.id] }));
+                      }}
+                    />
+                  </button>
+                  {open && (
+                    <div className="sidebar__children">
+                      {proj.tasks.length === 0 && (
+                        <div className="sidebar__empty">暂无任务</div>
+                      )}
+                      {proj.tasks.map((task) => (
+                        <div key={task.id} className="sidebar__project-task">
+                          <span className="sidebar__project-task-title">{task.title}</span>
+                          {task.status === "in_progress" && (
+                            <span className="sidebar__project-task-spinner" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {/* 工作目录节点 */}
             {spaceNodes.map((ws) => {
               const open = !!expanded[ws.cwd];
               const children = workspaceSessions[ws.cwd];
