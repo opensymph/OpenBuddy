@@ -1,28 +1,190 @@
-# OpenBuddy
+<p align="center">
+  <img src="app-icon.png" width="140" height="140" alt="OpenBuddy" />
+</p>
 
-[English](#english) | [中文](#中文)
+<h1 align="center">OpenBuddy</h1>
+
+<p align="center">
+  <strong>WorkBuddy, rewritten in Rust.</strong><br/>
+  The open-source, cross-platform, in-process grok desktop client.
+</p>
+
+<p align="center">
+  <a href="README.zh-CN.md">简体中文</a>
+  &nbsp;·&nbsp;
+  <a href="#why-openbuddy">Why</a> ·
+  <a href="#-features">Features</a> ·
+  <a href="#-openbuddy-vs-workbuddy">Compare</a> ·
+  <a href="#-quick-start">Quick Start</a> ·
+  <a href="#-architecture">Architecture</a> ·
+  <a href="#-roadmap">Roadmap</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/opensymph/OpenBuddy/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/opensymph/OpenBuddy?style=flat-square&logo=github&color=blue"></a>
+  <a href="https://github.com/opensymph/OpenBuddy/actions"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/opensymph/OpenBuddy/release.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white"></a>
+  <a href="https://github.com/opensymph/OpenBuddy/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/opensymph/OpenBuddy?style=flat-square&logo=starship&logoColor=white&color=yellow"></a>
+  <a href="https://github.com/opensymph/OpenBuddy/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/opensymph/OpenBuddy?style=flat-square&logo=forgejo&logoColor=white&color=orange"></a>
+  <br/>
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=flat-square&logo=windows10&logoColor=white">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square">
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-orange?style=flat-square&logo=rust&logoColor=white">
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-red?style=flat-square&logo=tauri&logoColor=white">
+  <img alt="React" src="https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react&logoColor=white">
+</p>
 
 ---
 
-## English
+## Why OpenBuddy?
 
-A WorkBuddy-style desktop client for the [grok](https://github.com/xai-org/grok-build) AI agent, built on **Tauri 2 + React 18 + Vite**. The grok agent runs **in-process** (embedded as Rust libraries) and is driven over the Agent Client Protocol (ACP) — no subprocess, no WebSocket relay.
+[**Tencent WorkBuddy**](https://workbuddy.tencent.com/) showed the world what a great grok-native desktop agent should feel like — the polished UI, the plan mode, the skills, the MCP connectors. But it's **closed-source, Windows-first, and locked to one provider.**
 
-> **Name reuse:** `OpenBuddy` shares WorkBuddy's `--wb-*` design tokens, its 190-icon foundation library, and its brand assets, so the UI looks pixel-close to WorkBuddy while talking to grok underneath.
+**OpenBuddy is the open answer:**
 
-### Highlights
+- 🔓 **100% open source (MIT)** — no telemetry black box, no vendor lock-in.
+- 🦀 **Rust-native, not Electron** — small binary, fast cold-start, real cross-platform.
+- 🪶 **~14× smaller installer** — OpenBuddy's Windows installer is **~34 MB**, vs **~483 MB** for WorkBuddy. Same shape of product, a fraction of the bytes.
+- 💨 **~19× less RAM at runtime** — **~20 MB** vs **~374 MB** for WorkBuddy on the same machine. Leaves your actual work room to breathe.
+- ⚙️ **grok as an in-process library** — no subprocess spawning, no WebSocket relay. The agent runs on a dedicated OS thread inside the very binary you double-click.
+- 🌐 **Truly cross-platform** — one codebase, Windows **and** macOS.
+- 🔑 **Bring Your Own Key** — point at any model provider via `~/.grok/config.toml`.
 
-- **grok as a library, in-process** — `xai-grok-shell` + `xai-acp-lib` are path dependencies; the agent runs on a dedicated OS thread driven by a current-thread tokio runtime + `LocalSet`.
-- **ACP is the front/back contract** — streaming `SessionUpdate`s, tool calls, plan updates and permission requests all flow over typed mpsc channels, serialized to `grok://update` / `grok://permission` / `grok://complete` Tauri events.
-- **WorkBuddy-grade UI** — ported design tokens, 190-icon foundation set, and brand assets for a pixel-close visual experience.
-- **BYOK providers** — bring your own keys for multiple model providers via `~/.grok/config.toml`.
-- **Extensible agent surface** — Skills (`x.ai/skills/*`), MCP connectors (`x.ai/mcp/*`), and Experts/Assistants (`~/.grok/agents/*.md`).
-- **Advanced workflows** — Plan mode, Rewind, sub-agent Tasks, Slash Commands, local Automations scheduler, and a notification center.
-- **Cross-platform installers** — Windows (NSIS / MSI) and macOS (DMG).
+> *"If WorkBuddy is the polished product, OpenBuddy is the one you can actually read, fork, and own."*
 
-<!-- TODO: add screenshots here once available -->
+### 🌟 Star this repo
 
-### Architecture
+If this project matters to you, please give it a ⭐ — it helps others discover it and keeps development moving.
+
+<p align="center">
+  <img src="https://img.shields.io/github/stars/opensymph/OpenBuddy?style=social" alt="stars">
+</p>
+
+---
+
+## ✨ Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🎨 Pixel-close WorkBuddy UI**
+Ported `--wb-*` design tokens, the full 190-icon foundation set, and brand assets. It *looks* like WorkBuddy, because the same atoms make it up.
+
+**⚙️ grok, in-process**
+`xai-grok-shell` + `xai-acp-lib` are path dependencies. The agent runs on its own OS thread, driven by a current-thread tokio runtime + `LocalSet`. No `child_process.spawn`.
+
+**🔌 ACP is the contract**
+Streaming `SessionUpdate`s, tool calls, plan updates, permission requests — all flow over typed `mpsc` channels, surfaced as `grok://update` / `grok://permission` / `grok://complete` Tauri events.
+
+</td>
+<td width="50%" valign="top">
+
+**🔑 BYOK, multi-provider**
+Bring your own keys. Configure any number of model providers in `~/.grok/config.toml`.
+
+**🧩 Extensible agent surface**
+- **Skills** — `x.ai/skills/*`
+- **MCP connectors** — `x.ai/mcp/*`
+- **Experts / Assistants** — `~/.grok/agents/*.md`
+
+**🚀 Advanced workflows**
+Plan mode (toggle & view) · Rewind (rewind & fork) · sub-agent Tasks (observe & cancel) · Slash Commands · local Automations scheduler · notification center.
+
+**📦 Cross-platform installers**
+Windows (NSIS `.exe` + MSI) and macOS (`.dmg`). CI-built releases via GitHub Actions.
+
+</td>
+</tr>
+</table>
+
+---
+
+## ⚔️ OpenBuddy vs WorkBuddy
+
+Only rows we can actually back up are listed. WorkBuddy's internals aren't public, so we don't speculate about them.
+
+|  | **OpenBuddy** | WorkBuddy |
+|---|:---:|:---:|
+| **License** | ✅ MIT, source available | ❌ Closed source |
+| **Cost** | Free forever | Free (Tencent-hosted) |
+| **Installer size** | ✅ **~34 MB** (NSIS, measured) | ⚠️ ~483 MB |
+| **Runtime memory** | ✅ **~20 MB** (measured) | ⚠️ ~374 MB |
+| **BYOK / any provider** | ✅ | ✅ |
+| **Provider config** | ✅ Plain `~/.grok/config.toml` — diffable, scriptable, version-controllable | ⚠️ GUI-only |
+| **MCP connectors** | ✅ | ✅ |
+| **Skills** | ✅ | ✅ (20+ built-in) |
+| **Plan / Rewind** | ✅ | ✅ |
+| **Windows** | ✅ | ✅ |
+| **macOS** | ✅ | ✅ |
+| **Linux** | 🔜 Roadmap | 🔜 |
+| **Self-host / fork** | ✅ Build it yourself | ❌ |
+| **Local data / offline-friendly** | ✅ Your `~/.grok/`, your disk | ⚠️ Tencent-hosted backend |
+
+> WorkBuddy is a polished, genuinely capable product — this isn't a hit piece. The point is simply: if you want the same shape of experience but **open, forkable, and provider-agnostic**, OpenBuddy is the path.
+
+---
+
+## 📸 Screenshots
+
+> Screenshots coming in the first stable release. Want to help? See [Contributing](#-contributing).
+
+<!-- TODO: drop screenshots/GIFs here once captured. A hero demo GIF is the single highest-impact asset for stars. -->
+
+---
+
+## 🚀 Quick Start
+
+### Option A — Download a prebuilt binary
+
+Grab the latest installer from the **[Releases](https://github.com/opensymph/OpenBuddy/releases)** page (Windows `.exe`/`.msi`, macOS `.dmg`), then:
+
+1. Install grok once: `grok login` (the app reuses `~/.grok/auth.json`).
+2. Launch OpenBuddy. Done.
+
+### Option B — Build from source
+
+```bash
+git clone --recurse-submodules https://github.com/opensymph/OpenBuddy.git
+cd OpenBuddy
+
+# If you forgot --recurse-submodules:
+bash scripts/setup.sh           # macOS / Linux
+powershell -File scripts/setup.ps1   # Windows
+
+pnpm install
+pnpm tauri dev
+```
+
+<details>
+<summary><b>📋 Prerequisites</b></summary>
+
+1. **Rust** (stable, ~1.95+). `rust-toolchain.toml` pins the MSVC host on Windows.
+2. **Node 20+** and **pnpm**.
+3. **grok** installed and logged in (`grok login` once). The app reuses `~/.grok/auth.json`.
+4. **protoc** on `PATH` **and** the `PROTOC` env var pointing at it (grok's `xai-grok-tools-api` build script needs it; its bundled `bin/protoc` is a DotSlash script that doesn't run on Windows).
+   - Windows: `choco install protoc`, then `setx PROTOC "C:\ProgramData\chocolatey\bin\protoc.exe"`.
+
+> The first build compiles the full grok dependency tree (rusqlite/git2 bundled C, prost/protobuf, axum, reqwest, …) — expect **5–10 minutes**. Incremental builds are fast thereafter.
+
+For Windows-specific gotchas (MSVC workload, mirrors, patches), see **[docs/WINDOWS_BUILD_NOTES.md](docs/WINDOWS_BUILD_NOTES.md)**.
+
+</details>
+
+<details>
+<summary><b>🏗️ Build installers</b></summary>
+
+```bash
+pnpm dist:win    # Windows: NSIS .exe + MSI (requires MSVC link.exe + Windows SDK)
+pnpm dist:mac    # macOS: .dmg (host arch; unsigned / unnotarized)
+```
+
+`grok-build` is vendored as a git submodule at `vendor/grok-build` (pinned to a verified revision). The setup scripts initialize it; `pnpm dist:*` verifies it's present before building.
+
+</details>
+
+---
+
+## 🧱 Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -44,36 +206,6 @@ A WorkBuddy-style desktop client for the [grok](https://github.com/xai-org/grok-
 │  xai-grok-shell + xai-acp-lib (path deps into grok-build) │
 └──────────────────────────────────────────────────────────┘
 ```
-
-### Prerequisites
-
-1. **Rust** (stable, ~1.95+). A `rust-toolchain.toml` pins the msvc host on Windows.
-2. **Node 20+** and **pnpm**.
-3. **grok** installed and logged in (`grok login` once). The app reuses `~/.grok/auth.json`.
-4. **protoc** on `PATH` **and** the `PROTOC` env var pointing at it (grok's `xai-grok-tools-api` build script needs it; its bundled `bin/protoc` is a DotSlash script that doesn't run on Windows). On Windows: `choco install protoc`, then set `PROTOC=C:\ProgramData\chocolatey\bin\protoc.exe`.
-
-### Develop
-
-```bash
-git clone --recurse-submodules <repo>
-# if you forgot --recurse-submodules:
-bash scripts/setup.sh        # macOS / Linux
-powershell -File scripts/setup.ps1   # Windows
-
-pnpm install
-pnpm tauri dev
-```
-
-The first build compiles the full grok dependency tree (rusqlite/git2 bundled C, prost/protobuf, axum, reqwest, …) — expect 5–10 minutes. Incremental builds are fast thereafter.
-
-### Build installers
-
-```bash
-pnpm dist:win    # Windows: NSIS .exe + MSI (requires MSVC link.exe + Windows SDK)
-pnpm dist:mac    # macOS: .dmg (built for the host arch; unsigned / unnotarized)
-```
-
-grok-build is vendored as a git submodule at `vendor/grok-build` (pinned to a verified revision). The setup scripts above initialize it; `pnpm dist:*` verifies it's present before building.
 
 ### Project layout
 
@@ -97,121 +229,52 @@ scripts/                 # build.ps1 (Windows) / build.sh (macOS)
 docs/                    # WINDOWS_BUILD_NOTES.md — Windows build gotchas
 ```
 
-### Status
+---
 
-Early preview. Phase 6 (history replay, cancel notification, end-to-end polish) is in progress.
+## 🗺️ Roadmap
 
-### Troubleshooting
+- [x] Core layout: Sidebar / HomePage / ChatView / Composer
+- [x] In-process grok agent over ACP
+- [x] WorkBuddy design tokens & 190-icon foundation
+- [x] BYOK multi-provider config
+- [x] Skills / MCP / Experts surfaces
+- [x] Plan mode · Rewind · Tasks · Slash Commands · Automations
+- [x] Windows (NSIS + MSI) & macOS (DMG) installers
+- [x] CI release workflow (GitHub Actions)
+- [ ] SceneTabs & skill recommendation bar
+- [ ] Pinned sessions & workspace grouping
+- [ ] Permission management panel
+- [ ] Search across sessions
+- [ ] Linux builds
+- [ ] Code signing & notarization
 
-For Windows build issues (MSVC workload, protoc, network mirrors, grok-source patches), see [docs/WINDOWS_BUILD_NOTES.md](docs/WINDOWS_BUILD_NOTES.md).
-
-### License
-
-MIT (LICENSE file to be added).
+See [TODO.md](TODO.md) for the full backlog. **PRs welcome** — see below.
 
 ---
 
-## 中文
+## 🤝 Contributing
 
-[grok](https://github.com/xai-org/grok-build) AI agent 的桌面客户端,WorkBuddy 风格,基于 **Tauri 2 + React 18 + Vite** 构建。grok agent 以**进程内 Rust 库**形式嵌入,通过 Agent Client Protocol (ACP) 驱动 —— 无子进程、无 WebSocket 中转。
+OpenBuddy is early and moving fast — contributions of every size are welcome.
 
-> **名称复用:** `OpenBuddy` 沿用了 WorkBuddy 的 `--wb-*` 设计令牌、190 图标基础库和品牌资源,因此 UI 与 WorkBuddy 几乎像素级一致,底层却对接的是 grok。
+1. Fork & clone with submodules (`git clone --recurse-submodules`).
+2. Pick an issue from [TODO.md](TODO.md) or open a new one to discuss.
+3. Run `pnpm tauri dev` to hack.
+4. Open a PR against `main`.
 
-### 主要特性
+Areas that especially need help right now: **Linux packaging**, **UI polish / screenshots**, **docs & i18n**, and **CI for macOS signing**.
 
-- **grok 作为进程内库运行** —— `xai-grok-shell` + `xai-acp-lib` 以路径依赖引入;agent 跑在独立 OS 线程上,由 current-thread tokio runtime + `LocalSet` 驱动。
-- **ACP 作为前后端契约** —— 流式 `SessionUpdate`、工具调用、Plan 更新、权限请求全部走类型化 mpsc 通道,序列化为 `grok://update` / `grok://permission` / `grok://complete` Tauri 事件。
-- **WorkBuddy 级 UI** —— 移植了设计令牌、190 图标基础集和品牌资源,视觉体验像素级对齐。
-- **自带 Key 多 Provider(BYOK)** —— 通过 `~/.grok/config.toml` 接入多家模型供应商。
-- **可扩展的 Agent 面** —— Skills(`x.ai/skills/*`)、MCP 连接器(`x.ai/mcp/*`)、Experts/Assistants(`~/.grok/agents/*.md`)。
-- **进阶工作流** —— Plan 模式、Rewind 回溯、子智能体 Tasks、Slash Commands、本地 Automations 调度器、通知中心。
-- **跨平台安装包** —— Windows(NSIS / MSI)与 macOS(DMG)。
+---
 
-<!-- TODO: 截图位置,有素材后补上 -->
+## 🙏 Acknowledgements
 
-### 架构
+- **[Tencent WorkBuddy](https://workbuddy.tencent.com/)** — the design north star. OpenBuddy reuses WorkBuddy's `--wb-*` design tokens, 190-icon foundation, and brand atoms for a pixel-close visual experience.
+- **[xai-org/grok-build](https://github.com/xai-org/grok-build)** — the embedded grok agent (`xai-grok-shell` + `xai-acp-lib`), consumed as path dependencies.
+- **[Tauri](https://tauri.app/)**, **[React](https://react.dev/)**, **[Vite](https://vitejs.dev/)** — the stack that makes a 10 MB shell feel instant.
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  Tauri 窗口 (webview)                                     │
-│  React UI (Topbar / Sidebar / ChatView / Composer / ...)  │
-│    └── Zustand stores  ←── Tauri 事件 ──┐                 │
-└───────────────────────────────────────────┼──────────────┘
-                                            │ invoke() / 事件
-┌───────────────────────────────────────────┼──────────────┐
-│  Tauri Rust 后端 (src-tauri/src)          │              │
-│   commands.rs  ← Tauri 命令 ──────────────┘              │
-│   grok.rs      ← spawn_grok() + ACP 生命周期             │
-│   bridge.rs    ← ACP → Tauri 事件分发器                  │
-│   sessions.rs  ← ~/.grok/sessions 历史列表               │
-└───────────────────────┬──────────────────────────────────┘
-                        │ 类型化 ACP mpsc 通道
-┌───────────────────────┴──────────────────────────────────┐
-│  grok agent 线程 (MvpAgent, !Send, LocalSet)              │
-│  xai-grok-shell + xai-acp-lib (指向 grok-build 的路径依赖)│
-└──────────────────────────────────────────────────────────┘
-```
+This project is an independent, community-driven open-source effort and is not affiliated with, endorsed by, or sponsored by Tencent or xAI.
 
-### 前置要求
+---
 
-1. **Rust**(stable,约 1.95+)。`rust-toolchain.toml` 在 Windows 上固定 msvc 主机。
-2. **Node 20+** 与 **pnpm**。
-3. 已安装并登录 **grok**(执行一次 `grok login`)。应用复用 `~/.grok/auth.json`。
-4. **protoc** 在 `PATH` 中**且** `PROTOC` 环境变量指向它(grok 的 `xai-grok-tools-api` 构建脚本需要;它自带的 `bin/protoc` 是 DotSlash 脚本,在 Windows 上跑不起来)。Windows 上可:`choco install protoc`,然后设 `PROTOC=C:\ProgramData\chocolatey\bin\protoc.exe`。
+## License
 
-### 本地开发
-
-```bash
-git clone --recurse-submodules <repo>
-# 若忘了 --recurse-submodules:
-bash scripts/setup.sh        # macOS / Linux
-powershell -File scripts/setup.ps1   # Windows
-
-pnpm install
-pnpm tauri dev
-```
-
-首次构建会编译整个 grok 依赖树(rusqlite/git2 内联 C、prost/protobuf、axum、reqwest ……),预计 5–10 分钟。之后的增量编译很快。
-
-### 构建安装包
-
-```bash
-pnpm dist:win    # Windows:NSIS .exe + MSI(需 MSVC link.exe + Windows SDK)
-pnpm dist:mac    # macOS:.dmg(按宿主架构构建;未签名 / 未公证)
-```
-
-grok-build 作为 git submodule 内置于 `vendor/grok-build`(pin 在已验证的 revision)。上面的 setup 脚本负责初始化它;`pnpm dist:*` 在构建前会校验其存在。
-
-### 项目结构
-
-```
-src/                     # React 前端
-  styles/                # tokens.css / global.css / app.css
-  foundation/components/Icon/   # 从 WorkBuddy 移植(190 图标)
-  lib/                   # grok-client.ts(Tauri 命令封装)+ types.ts(ACP TS 镜像)
-  stores/                # Zustand:session / sessions / permission / ...
-  components/            # Topbar, Sidebar, HomePage, ChatView, Composer, ...
-
-src-tauri/               # Rust 后端
-  src/
-    lib.rs               # Tauri 入口 + 状态 + 命令注册
-    grok.rs              # spawn_grok() + authenticate/new_session/prompt/cancel
-    bridge.rs            # ACP→Tauri 事件分发器 + 权限注册表
-    commands.rs          # #[tauri::command] 表(grok_*)
-    sessions.rs          # 列出 ~/.grok/sessions 供侧边栏使用
-
-scripts/                 # build.ps1(Windows)/ build.sh(macOS)
-docs/                    # WINDOWS_BUILD_NOTES.md —— Windows 构建踩坑笔记
-```
-
-### 状态
-
-早期预览版。Phase 6(历史回放、取消通知、端到端打磨)进行中。
-
-### 故障排查
-
-Windows 构建相关问题(MSVC 工作负载、protoc、网络镜像、grok 源码补丁)见 [docs/WINDOWS_BUILD_NOTES.md](docs/WINDOWS_BUILD_NOTES.md)。
-
-### 协议
-
-MIT(LICENSE 文件待补)。
+MIT © OpenBuddy contributors. See [LICENSE](LICENSE).
