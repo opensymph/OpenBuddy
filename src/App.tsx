@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
 import { HomePage } from "./components/HomePage";
@@ -29,6 +29,7 @@ import {
   grokListWorkspaces,
   grokRenameSession,
   grokSetModel,
+  grokAuthStatus,
   providersList,
   notificationAppend,
   subscribeGrokEvents,
@@ -85,6 +86,36 @@ function Shell() {
   const sessionsStore = useSessionsStore;
   const permissionStore = usePermissionStore;
   const questionStore = useQuestionStore;
+
+  /** Re-fetch providers + auth readiness after Settings add/edit/delete.
+   *
+   * Previously this only updated `models`, so the home Composer still saw
+   * `apiReady=false` (from the cold-start `init.auth.ready`) and stayed
+   * disabled with "请先配置 API Key" — looking like nothing changed.
+   * Also, the first added model was never auto-selected as currentModelId.
+   */
+  const refreshModels = useCallback(async () => {
+    try {
+      const [list, auth] = await Promise.all([providersList(), grokAuthStatus()]);
+      const options = list.map((m) => ({
+        id: m.modelId,
+        label: m.name || m.modelId,
+      }));
+      setModels(options);
+
+      // Keep the current selection if it still exists; otherwise pick the first
+      // configured provider (or clear when the list becomes empty).
+      setCurrentModelId((prev) => {
+        if (prev && options.some((o) => o.id === prev)) return prev;
+        return options[0]?.id;
+      });
+
+      // Unlock the home Composer as soon as a BYOK provider exists (or OAuth).
+      setInit((prev) => (prev ? { ...prev, auth } : prev));
+    } catch {
+      // Non-fatal — the picker keeps its previous list.
+    }
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -189,16 +220,13 @@ function Shell() {
               "info",
             );
           },
-          onModelsUpdate: (p) => {
-            // grok reloaded its model catalog — refresh the picker so new
-            // providers appear without a restart.
-            providersList().then((list) => {
-              setModels(list.map((m) => ({ id: m.modelId, label: m.name || m.modelId })));
-            }).catch(() => {});
+          onModelsUpdate: () => {
+            // grok reloaded its model catalog — keep picker + ready state in sync.
+            void refreshModels();
             void notificationAppend(
               "models_update",
               "模型列表已更新",
-              typeof p === "string" ? p : JSON.stringify(p).slice(0, 200),
+              undefined,
               undefined,
               "info",
             );
@@ -428,18 +456,6 @@ function Shell() {
     sessionStore.getState().reset();
   };
 
-  /** Re-fetch the provider list and update the model picker. Called after
-   *  saving/deleting a provider in Settings so the change is visible
-   *  immediately without restarting. */
-  const refreshModels = async () => {
-    try {
-      const list = await providersList();
-      setModels(list.map((m) => ({ id: m.modelId, label: m.name || m.modelId })));
-    } catch {
-      // Non-fatal — the picker keeps its previous list.
-    }
-  };
-
   // 空间节点展开/折叠: 记录展开态, 首次展开时懒加载该 cwd 的子会话。
   const handleToggleWorkspace = async (cwd: string, next: boolean) => {
     sessionsStore.getState().setExpanded(cwd, next);
@@ -664,7 +680,7 @@ function Shell() {
               请确认已在终端运行 <code>grok login</code> 完成 grok 登录后重试。
             </div>
           ) : !init ? (
-            <div className="app__notice">正在启动 grok agent…</div>
+            <div className="app__notice">正在本地初始化 agent…</div>
           ) : !init.ok ? (
             <div className="app__notice app__notice--err">
               grok 未就绪:{init.auth.reason ?? "未知原因"}

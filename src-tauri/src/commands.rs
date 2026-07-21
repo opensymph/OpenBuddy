@@ -77,9 +77,16 @@ pub async fn grok_init(
 
     let auth_ok = has_auth_file();
 
-    // Spawn the agent (may take a moment for first-run bootstrap).
-    let grok::GrokHandle { tx, rx, cancel } =
-        grok::spawn_grok(cwd.clone()).map_err(|e| format!("spawn grok: {e}"))?;
+    // Spawn the agent off the async runtime. `spawn_grok` does blocking I/O
+    // (config load, first-run bundled extract under ~/.grok). Running it
+    // inline would stall Tauri's tokio workers and freeze the UI.
+    let spawn_cwd = cwd.clone();
+    let grok::GrokHandle { tx, rx, cancel } = tokio::task::spawn_blocking(move || {
+        grok::spawn_grok(spawn_cwd)
+    })
+    .await
+    .map_err(|e| format!("spawn grok task: {e}"))?
+    .map_err(|e| format!("spawn grok: {e}"))?;
 
     // Stash tx for later commands; move rx into the dispatcher.
     *state.tx.lock().unwrap() = Some(tx.clone());

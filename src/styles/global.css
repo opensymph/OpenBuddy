@@ -10,6 +10,36 @@
  */
 @import "./tokens.css";
 
+/* Foundation Icon base (ported from WorkBuddy agent-ui). */
+.wb-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.wb-icon--spin {
+  animation: wb-icon-spin 1.2s linear infinite;
+  transform-origin: center;
+}
+@keyframes wb-icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* themable monochrome brand assets: invert under dark theme. */
+.wb-icon--themable {
+  filter: none;
+  transition: filter var(--wb-motion-duration-fast, 160ms)
+    var(--wb-motion-easing-standard, ease);
+}
+.dark .wb-icon--themable,
+[data-theme="dark"] .wb-icon--themable,
+.wb-theme--dark .wb-icon--themable {
+  filter: brightness(0) invert(1);
+}
+
 /*
  * Short-form aliases used by some WorkBuddy components and by OpenBuddy's
  * own placeholder UI. These map onto the semantic tokens above and exist

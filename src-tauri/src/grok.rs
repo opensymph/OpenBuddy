@@ -50,13 +50,23 @@ pub struct GrokHandle {
 /// `cwd` is the working directory the agent binds sessions to (typically the
 /// user's home or a chosen project). Auth is read from `~/.grok/auth.json`
 /// — no re-login if it already exists.
+///
+/// OpenBuddy intentionally skips grok's startup remote-settings/models
+/// prefetch (the synchronous `start_early_prefetch` join inside `bootstrap`).
+/// That call hits xAI backends and can block first launch for tens of seconds
+/// on slow networks; BYOK users only need local `config.toml` models. We seed
+/// an empty `RemoteSettings` so bootstrap treats remote config as already
+/// supplied and never opens the network path.
 pub fn spawn_grok(_cwd: PathBuf) -> Result<GrokHandle> {
     // 1. Load + resolve config (~/.grok/config.toml; defaults if absent).
     let raw = load_effective_config().map_err(|e| anyhow!("load config: {e}"))?;
     let mut cfg = AgentConfig::new_from_toml_cfg(&raw).map_err(|e| anyhow!("parse config: {e}"))?;
+    // Empty remote settings: local defaults only. Must be set both here (runtime
+    // resolution) and on `cfg.remote_settings` before bootstrap (see below).
+    let local_remote_settings = xai_grok_shell::util::config::RemoteSettings::default();
     cfg.resolve_runtime_fields(&RuntimeResolutionContext {
         raw_config: &raw,
-        remote_settings: None,
+        remote_settings: Some(&local_remote_settings),
         is_headless: true,
         cli_subagents: Some(false),
         cli_web_search_model: None,
@@ -69,12 +79,17 @@ pub fn spawn_grok(_cwd: PathBuf) -> Result<GrokHandle> {
         storage_mode: None,
     });
 
+    // Skip bootstrap's shell-level remote_settings fallback fetch
+    // (`start_early_prefetch` + thread join). See module comment above.
+    cfg.remote_settings = Some(local_remote_settings);
+
     // 2. Auth: reuse ~/.grok/auth.json.
     let grok_home = grok_home_dir();
     let auth_manager = Arc::new(AuthManager::new(&grok_home, cfg.grok_com_config.clone()));
     auth_manager.configure_refresher(cfg.grok_com_config.auth_provider_command.clone(), None);
 
     // 3. Bootstrap: telemetry, bundled files, ModelsManager.
+    // Network catalog prefetch is skipped because remote_settings is already Some.
     let (cfg, models_manager) =
         bootstrap(&cfg, &auth_manager, None).map_err(|e| anyhow!("bootstrap: {e}"))?;
 

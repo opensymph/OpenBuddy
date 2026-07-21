@@ -2,7 +2,7 @@ import { Markdown, type MarkdownConfig } from "./markdown/index";
 import { ToolCallCard } from "./ToolCallCard";
 import { LoadingRow } from "./LoadingRow";
 import { useTheme } from "./ThemeProvider";
-import type { ChatMessage } from "@/stores/session-store";
+import type { ChatMessage, ToolCallView } from "@/stores/session-store";
 
 /**
  * Renders one chat message. Assistant messages are left-aligned with avatar +
@@ -12,14 +12,17 @@ export function MessageItem({
   message,
   streaming,
   markdownConfig,
-  cwd,
-  onToast,
+  onOpenTool,
 }: {
   message: ChatMessage;
   streaming: boolean;
   markdownConfig?: MarkdownConfig;
+  /** @deprecated kept for call-site compatibility; unused after compact tools. */
   cwd?: string;
+  /** @deprecated kept for call-site compatibility; unused after compact tools. */
   onToast?: (msg: string) => void;
+  /** Open tool detail in the right-side panel (Phase 2). */
+  onOpenTool?: (tc: ToolCallView) => void;
 }) {
   const { theme } = useTheme();
   if (message.role === "user") {
@@ -82,10 +85,9 @@ export function MessageItem({
             }
             return (
               <ToolCallCard
-                key={i}
+                key={p.toolCall.toolCallId || i}
                 tc={p.toolCall}
-                cwd={cwd ?? markdownConfig?.cwd}
-                onToast={onToast}
+                onOpen={onOpenTool}
               />
             );
           })}

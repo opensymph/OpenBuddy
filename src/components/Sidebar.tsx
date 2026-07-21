@@ -30,8 +30,10 @@ import {
   WbPinIcon,
   WbUnpinIcon,
   MyFilesIconV2,
-  BookIcon,
-  LightbulbIcon,
+  MoreMenuImaKnowledgeIcon,
+  MoreMenuInspirationIcon,
+  MoreMenuTencentDocsIcon,
+  MoreMenuTencentLexiangIcon,
 } from "@/foundation/components/Icon/icons";
 
 const NAV = [
@@ -166,11 +168,15 @@ function SessionContextMenu({ x, y, sessionId, sessionTitle, isPinned, onClose, 
 }
 
 /**
- * "更多" 侧栏按钮的弹出菜单 — 仿 WorkBuddy Dropdown 交互。
- * 菜单项：我的文件 / 资料库 / 灵感。
+ * "更多" 侧栏按钮的弹出菜单 — 对齐 WorkBuddy：
+ * - hover 打开，向右浮出（不向下盖住会话列表）
+ * - 菜单项：我的文件 / 腾讯文档 / ima知识库 / 乐享知识库 / 灵感
+ *
+ * 腾讯系三项在 OpenBuddy 暂无完整对接，点击给 toast；可导航项走 onNavigate。
  */
 function MoreDropdown({
   onNavigate,
+  onToast,
   activeNav,
 }: {
   onNavigate: (label: string) => void;
@@ -179,6 +185,25 @@ function MoreDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearCloseTimer = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const scheduleClose = () => {
+    clearCloseTimer();
+    // Small grace so the cursor can move from trigger → popover without flicker.
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  };
+
+  const openMenu = () => {
+    clearCloseTimer();
+    setOpen(true);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -198,36 +223,87 @@ function MoreDropdown({
     };
   }, [open]);
 
-  const isActive = activeNav === "更多" || activeNav === "资料库" || activeNav === "灵感" || activeNav === "我的文件";
+  useEffect(() => () => clearCloseTimer(), []);
 
-  const ITEMS: { id: string; label: string; icon: React.ReactNode; action: () => void }[] = [
+  const isActive =
+    activeNav === "更多" ||
+    activeNav === "资料库" ||
+    activeNav === "灵感" ||
+    activeNav === "我的文件" ||
+    activeNav === "腾讯文档" ||
+    activeNav === "ima知识库" ||
+    activeNav === "乐享知识库";
+
+  const ITEMS: {
+    id: string;
+    label: string;
+    icon: React.ReactNode;
+    action: () => void;
+  }[] = [
     {
       id: "my_files",
       label: "我的文件",
       icon: <MyFilesIconV2 size="md" />,
-      action: () => { setOpen(false); onNavigate("我的文件"); },
+      action: () => {
+        setOpen(false);
+        onNavigate("我的文件");
+      },
     },
     {
-      id: "library",
-      label: "资料库",
-      icon: <BookIcon size="md" />,
-      action: () => { setOpen(false); onNavigate("资料库"); },
+      id: "tencent_docs",
+      label: "腾讯文档",
+      icon: <MoreMenuTencentDocsIcon size="md" />,
+      action: () => {
+        setOpen(false);
+        onToast?.("腾讯文档对接开发中");
+      },
+    },
+    {
+      id: "ima_kb",
+      label: "ima知识库",
+      icon: <MoreMenuImaKnowledgeIcon size="md" />,
+      action: () => {
+        setOpen(false);
+        onToast?.("ima 知识库对接开发中");
+      },
+    },
+    {
+      id: "lexiang_kb",
+      label: "乐享知识库",
+      icon: <MoreMenuTencentLexiangIcon size="md" />,
+      action: () => {
+        setOpen(false);
+        onToast?.("乐享知识库对接开发中");
+      },
     },
     {
       id: "inspiration",
       label: "灵感",
-      icon: <LightbulbIcon size="md" />,
-      action: () => { setOpen(false); onNavigate("灵感"); },
+      icon: <MoreMenuInspirationIcon size="md" />,
+      action: () => {
+        setOpen(false);
+        onNavigate("灵感");
+      },
     },
   ];
 
   return (
-    <div className="sidebar__more-wrap" ref={containerRef}>
+    <div
+      className={"sidebar__more-wrap" + (open ? " sidebar__more-wrap--open" : "")}
+      ref={containerRef}
+      onMouseEnter={openMenu}
+      onMouseLeave={scheduleClose}
+    >
       <button
+        type="button"
         className={
-          "sidebar__nav-item" + (isActive ? " sidebar__nav-item--active" : "")
+          "sidebar__nav-item" +
+          (isActive || open ? " sidebar__nav-item--active" : "")
         }
+        aria-haspopup="menu"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
+        onFocus={openMenu}
       >
         <WbMoreNavIcon size="md" />
         <span>更多</span>
@@ -238,6 +314,7 @@ function MoreDropdown({
           {ITEMS.map((item) => (
             <button
               key={item.id}
+              type="button"
               className={
                 "sidebar__more-item" +
                 (activeNav === item.label ? " sidebar__more-item--active" : "")

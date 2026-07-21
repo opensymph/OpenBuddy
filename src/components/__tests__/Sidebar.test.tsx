@@ -58,4 +58,18 @@ describe("Sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
     expect(onToggleCollapse).toHaveBeenCalled();
   });
+
+  it("hover「更多」展开右侧菜单并可进入灵感", () => {
+    const onNavigate = vi.fn();
+    render(<Sidebar {...base} onNavigate={onNavigate} />);
+    fireEvent.mouseEnter(screen.getByText("更多").closest(".sidebar__more-wrap")!);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getByText("我的文件")).toBeInTheDocument();
+    expect(screen.getByText("腾讯文档")).toBeInTheDocument();
+    expect(screen.getByText("ima知识库")).toBeInTheDocument();
+    expect(screen.getByText("乐享知识库")).toBeInTheDocument();
+    expect(screen.getByText("灵感")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("灵感"));
+    expect(onNavigate).toHaveBeenCalledWith("灵感");
+  });
 });

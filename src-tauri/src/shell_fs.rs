@@ -175,6 +175,32 @@ pub async fn path_stat(path: String, cwd: Option<String>) -> Result<PathStat, St
     })
 }
 
+/// Read a local text file for the in-app preview panel.
+/// Caps at `max_bytes` (default 256 KiB) so huge logs don't freeze the UI.
+#[tauri::command]
+pub async fn read_text_file(
+    path: String,
+    cwd: Option<String>,
+    max_bytes: Option<u64>,
+) -> Result<String, String> {
+    let resolved = resolve_path(&path, cwd.as_deref());
+    if !resolved.exists() {
+        return Err(format!("文件不存在：{}", resolved.display()));
+    }
+    if !resolved.is_file() {
+        return Err(format!("不是文件：{}", resolved.display()));
+    }
+    let limit = max_bytes.unwrap_or(256 * 1024) as usize;
+    let data = std::fs::read(&resolved).map_err(|e| format!("读取失败：{e}"))?;
+    let truncated = data.len() > limit;
+    let slice = if truncated { &data[..limit] } else { &data[..] };
+    let mut text = String::from_utf8_lossy(slice).into_owned();
+    if truncated {
+        text.push_str("\n\n…(已截断，仅预览前部分内容)");
+    }
+    Ok(text)
+}
+
 /// Write text to a file, restricted to `workspace_root` (session cwd).
 /// Creates parent directories as needed. Overwrites existing files.
 #[tauri::command]

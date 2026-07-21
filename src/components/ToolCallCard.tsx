@@ -1,32 +1,88 @@
-import { useState, useEffect, useCallback, type MouseEvent } from "react";
 import type { ToolCallView } from "@/stores/session-store";
 import type { DiffContent, CommandOutputContent } from "@/lib/types";
-import { openLocalPath } from "@/lib/markdown-host";
 
 type ToolCallCardProps = {
   tc: ToolCallView;
-  cwd?: string;
-  onToast?: (msg: string) => void;
+  /** Open the right-side detail drawer (Phase 2). */
+  onOpen?: (tc: ToolCallView) => void;
 };
 
 /**
- * Inline tool-call card. Renders differently by kind:
- *  - read_file / list_dir: collapsible code/output block
- *  - edit (diff content): +/- diff view with clickable path
- *  - run_terminal_command: command + output
- *  - everything else: generic title + status
+ * Compact inline tool-call row (Phase 1 — WorkBuddy `unknown-tool-compact`).
+ *
+ * Always one line in the transcript: kind + short title + status.
+ * Details (command/diff/output) open in the side drawer via `onOpen`.
  */
-export function ToolCallCard({ tc, cwd, onToast }: ToolCallCardProps) {
-  const [open, setOpen] = useState(tc.status === "in_progress");
+export function ToolCallCard({ tc, onOpen }: ToolCallCardProps) {
+  const statusCls =
+    tc.status === "completed"
+      ? "toolcall--ok"
+      : tc.status === "failed"
+        ? "toolcall--err"
+        : "toolcall--run";
 
-  // Auto-expand while running, auto-collapse when done.
-  useEffect(() => {
-    if (tc.status === "in_progress") {
-      setOpen(true);
-    } else {
-      setOpen(false);
-    }
-  }, [tc.status]);
+  const statusLabel =
+    tc.status === "completed" ? "完成" : tc.status === "failed" ? "失败" : "运行中";
+
+  const statusMark =
+    tc.status === "completed" ? "✓" : tc.status === "failed" ? "!" : "…";
+
+  const shortTitle = shortenTitle(tc.title, tc.kind);
+
+  return (
+    <button
+      type="button"
+      className={"toolcall toolcall--compact " + statusCls}
+      onClick={() => onOpen?.(tc)}
+      title={`${tc.kind}: ${tc.title}（${statusLabel}，点击查看详情）`}
+      aria-label={`${tc.kind} ${shortTitle} ${statusLabel}`}
+    >
+      <span className="toolcall__kind">{prettyKind(tc.kind)}</span>
+      <span className="toolcall__title">{shortTitle}</span>
+      <span className={"toolcall__status-mark toolcall__status-mark--" + tc.status}>
+        {statusMark}
+      </span>
+    </button>
+  );
+}
+
+function prettyKind(kind: string): string {
+  const k = (kind || "tool").toLowerCase();
+  if (k.includes("edit") || k === "write" || k === "write_file") return "edit";
+  if (k.includes("read")) return "read";
+  if (k.includes("shell") || k.includes("terminal") || k.includes("execute") || k === "bash")
+    return "shell";
+  if (k.includes("search") || k.includes("grep") || k.includes("glob")) return "search";
+  if (k.includes("list")) return "list";
+  if (k.includes("ask") || k.includes("question") || k === "other") return "ask";
+  return k.length > 12 ? k.slice(0, 12) : k;
+}
+
+/** Prefer a path / command snippet over the full verbose title. */
+function shortenTitle(title: string, kind: string): string {
+  const t = (title || "").trim();
+  if (!t) return kind || "tool";
+  // "Write `path`" / Write "path" / Write path
+  const write = t.match(/Write\s+[`'"]?(.+?)[`'"]?\s*$/i);
+  if (write?.[1]) return write[1];
+  // Execute 'cmd' / Run …
+  const exec = t.match(/^(?:Execute|Run)\s+[`'"]?(.+?)[`'"]?\s*$/i);
+  if (exec?.[1]) {
+    const cmd = exec[1];
+    return cmd.length > 64 ? cmd.slice(0, 64) + "…" : cmd;
+  }
+  return t.length > 72 ? t.slice(0, 72) + "…" : t;
+}
+
+// ---------- shared detail body (drawer / artifacts) ----------
+
+export function ToolCallDetailBody({
+  tc,
+  onOpenPath,
+}: {
+  tc: ToolCallView;
+  onOpenPath?: (path: string) => void;
+}) {
   const diff = tc.content.find((c) => c.type === "diff") as DiffContent | undefined;
   const cmd = tc.content.find((c) => c.type === "command_output") as
     | CommandOutputContent
@@ -36,54 +92,51 @@ export function ToolCallCard({ tc, cwd, onToast }: ToolCallCardProps) {
     text: string;
   }>;
 
-  const statusCls =
-    tc.status === "completed"
-      ? "toolcall--ok"
-      : tc.status === "failed"
-        ? "toolcall--err"
-        : "toolcall--run";
-
   return (
-    <div className={"toolcall " + statusCls}>
-      <button
-        className="toolcall__head"
-        onClick={() => setOpen((o) => !o)}
-        title={tc.title}
-      >
-        <span className="toolcall__kind">{tc.kind}</span>
-        <span className="toolcall__title">{tc.title}</span>
-        <span className="toolcall__chev">{open ? "▾" : "▸"}</span>
-      </button>
-      {open && (
-        <div className="toolcall__body">
-          {diff && (
-            <DiffView diff={diff.diff} cwd={cwd} onToast={onToast} />
-          )}
-          {cmd && (
-            <div className="toolcall__cmd">
-              {cmd.command && (
-                <pre className="toolcall__cmd-line">
-                  <span className="toolcall__prompt">$</span>
-                  {cmd.command}
-                </pre>
-              )}
-              {cmd.output && <pre className="toolcall__output">{cmd.output}</pre>}
-            </div>
-          )}
-          {texts.map((t, i) => (
-            <pre key={i} className="toolcall__text">
-              {t.text}
-            </pre>
-          ))}
-          {/* Fallback: show rawInput when no content blocks rendered. */}
-          {!diff && !cmd && texts.length === 0 && tc.rawInput != null && (
-            <pre className="toolcall__text toolcall__raw-input">
-              {typeof tc.rawInput === "string"
-                ? tc.rawInput
-                : JSON.stringify(tc.rawInput, null, 2)}
+    <div className="tool-detail">
+      <div className="tool-detail__meta">
+        <span className="toolcall__kind">{prettyKind(tc.kind)}</span>
+        <span className={"tool-detail__status tool-detail__status--" + tc.status}>
+          {tc.status === "completed"
+            ? "已完成"
+            : tc.status === "failed"
+              ? "失败"
+              : "运行中"}
+        </span>
+      </div>
+      <h3 className="tool-detail__title">{tc.title}</h3>
+
+      {diff && (
+        <DiffView
+          diff={diff.diff}
+          onOpenPath={onOpenPath}
+        />
+      )}
+      {cmd && (
+        <div className="toolcall__cmd">
+          {cmd.command && (
+            <pre className="toolcall__cmd-line">
+              <span className="toolcall__prompt">$</span>
+              {cmd.command}
             </pre>
           )}
+          {cmd.output && <pre className="toolcall__output">{cmd.output}</pre>}
         </div>
+      )}
+      {texts.map((t, i) => (
+        <pre key={i} className="toolcall__text">
+          {t.text}
+        </pre>
+      ))}
+      {!diff && !cmd && texts.length === 0 && tc.rawInput != null && (
+        <pre className="toolcall__text toolcall__raw-input">
+          {typeof tc.rawInput === "string"
+            ? tc.rawInput
+            : JSON.stringify(tc.rawInput, null, 2)}
+        </pre>
+      )}
+      {!diff && !cmd && texts.length === 0 && tc.rawInput == null && (
+        <p className="tool-detail__empty">暂无详细输出</p>
       )}
     </div>
   );
@@ -91,24 +144,12 @@ export function ToolCallCard({ tc, cwd, onToast }: ToolCallCardProps) {
 
 function DiffView({
   diff,
-  cwd,
-  onToast,
+  onOpenPath,
 }: {
   diff: DiffContent["diff"];
-  cwd?: string;
-  onToast?: (msg: string) => void;
+  onOpenPath?: (path: string) => void;
 }) {
   const path = diff.path || "";
-  const handleOpenPath = useCallback(
-    (e: MouseEvent) => {
-      e.stopPropagation();
-      if (!path) return;
-      void openLocalPath(path, { cwd, type: "file", onToast });
-    },
-    [path, cwd, onToast],
-  );
-
-  // Prefer unified hunks if present; otherwise compute a naive line diff.
   const oldLines = (diff.old ?? "").split("\n");
   const newLines = (diff.new ?? "").split("\n");
 
@@ -116,8 +157,8 @@ function DiffView({
     <button
       type="button"
       className="diff__path diff__path--clickable"
-      onClick={handleOpenPath}
-      title={`在资源管理器中打开：${path}`}
+      onClick={() => onOpenPath?.(path)}
+      title={`打开：${path}`}
     >
       {path}
     </button>
