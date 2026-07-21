@@ -1,13 +1,27 @@
-import { Markdown } from "./Markdown";
+import { Markdown, type MarkdownConfig } from "./markdown/index";
 import { ToolCallCard } from "./ToolCallCard";
 import { LoadingRow } from "./LoadingRow";
+import { useTheme } from "./ThemeProvider";
 import type { ChatMessage } from "@/stores/session-store";
 
 /**
  * Renders one chat message. Assistant messages are left-aligned with avatar +
  * name row; user messages are right-aligned bubbles with no avatar / name.
  */
-export function MessageItem({ message, streaming }: { message: ChatMessage; streaming: boolean }) {
+export function MessageItem({
+  message,
+  streaming,
+  markdownConfig,
+  cwd,
+  onToast,
+}: {
+  message: ChatMessage;
+  streaming: boolean;
+  markdownConfig?: MarkdownConfig;
+  cwd?: string;
+  onToast?: (msg: string) => void;
+}) {
+  const { theme } = useTheme();
   if (message.role === "user") {
     return (
       <div className="msg msg--user">
@@ -37,19 +51,43 @@ export function MessageItem({ message, streaming }: { message: ChatMessage; stre
           {message.parts.length === 0 && !message.complete && <LoadingRow />}
           {message.parts.map((p, i) => {
             if (p.kind === "text") {
-              return <Markdown key={i}>{p.text}</Markdown>;
+              return (
+                <Markdown
+                  key={i}
+                  complete={message.complete}
+                  markdownTheme="loose"
+                  theme={theme}
+                  config={markdownConfig}
+                >
+                  {p.text}
+                </Markdown>
+              );
             }
             if (p.kind === "thought") {
               return (
                 <details key={i} className="msg__thought">
                   <summary>深度思考</summary>
                   <div className="msg__thought-body">
-                    <Markdown>{p.text}</Markdown>
+                    <Markdown
+                      complete={message.complete}
+                      markdownTheme="reasoning"
+                      theme={theme}
+                      config={markdownConfig}
+                    >
+                      {p.text}
+                    </Markdown>
                   </div>
                 </details>
               );
             }
-            return <ToolCallCard key={i} tc={p.toolCall} />;
+            return (
+              <ToolCallCard
+                key={i}
+                tc={p.toolCall}
+                cwd={cwd ?? markdownConfig?.cwd}
+                onToast={onToast}
+              />
+            );
           })}
           {streaming &&
             message.complete === false &&

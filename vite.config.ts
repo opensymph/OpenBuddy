@@ -40,8 +40,17 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          markdown: ["react-markdown", "remark-gfm"],
-          highlight: ["react-syntax-highlighter"],
+          markdown: [
+            "react-markdown",
+            "remark-gfm",
+            "remark-breaks",
+            "remark-math",
+            "rehype-highlight",
+            "rehype-sanitize",
+            "lowlight",
+          ],
+          katex: ["katex", "rehype-katex"],
+          mermaid: ["mermaid"],
         },
       },
     },

@@ -363,10 +363,26 @@ export type AutomationStatus = "ACTIVE" | "PAUSED";
 
 // ---------- inspiration (灵感面板) ----------
 
+/** Basic card returned by grok's inspiration generator. */
 export interface InspirationCard {
   title: string;
   summary: string;
   takeaway: string;
+}
+
+/** Rich card used by the InspirationPanel UI (extends grok output). */
+export interface InspirationRichCard {
+  cardId: string;
+  title: string;
+  summary: string;
+  detail?: string;
+  category: string;
+  cover?: string;
+  prompt?: string;
+  actions?: { label: string; type: string; payload: string }[];
+  read?: boolean;
+  saved?: boolean;
+  createdAt?: string;
 }
 
 export interface InspirationStarted {

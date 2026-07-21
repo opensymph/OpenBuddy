@@ -29,6 +29,57 @@ pub struct Permissions {
     inner: Arc<Mutex<HashMap<String, oneshot::Sender<PermissionOutcome>>>>,
 }
 
+/// Registry of questions awaiting a user answer. The frontend calls the
+/// `grok_resolve_question` command, which looks up the entry by id and
+/// fulfills the oneshot the agent is waiting on.
+#[derive(Default, Clone)]
+pub struct Questions {
+    inner: Arc<Mutex<HashMap<String, oneshot::Sender<QuestionOutcome>>>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionFrontend {
+    pub request_id: String,
+    pub session_id: String,
+    pub tool_call_id: String,
+    pub title: String,
+    pub questions: Vec<QuestionItem>,
+    pub timeout: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionItem {
+    pub id: String,
+    pub question: String,
+    pub options: Vec<String>,
+}
+
+/// Frontend → bridge outcome for an `ask_user_question` reverse-request.
+///
+/// The wire format sent back to grok must match
+/// `AskUserQuestionExtResponse` (internally tagged on `"outcome"`,
+/// snake_case variants): e.g. `{"outcome":"accepted","answers":{...}}`.
+pub enum QuestionOutcome {
+    /// User accepted. `answers` is keyed by **question text** (not id);
+    /// values are selected option labels (or `"Other"` for freeform).
+    /// `annotations` carries freeform notes / previews keyed the same way.
+    Accepted {
+        answers: HashMap<String, Vec<String>>,
+        annotations: Option<HashMap<String, QuestionAnnotation>>,
+    },
+    Cancelled,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct QuestionAnnotation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionFrontend {
@@ -88,6 +139,35 @@ impl Permissions {
     }
 }
 
+impl Questions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn share(&self) -> Questions {
+        Questions {
+            inner: self.inner.clone(),
+        }
+    }
+
+    pub async fn register(&self) -> (String, oneshot::Receiver<QuestionOutcome>) {
+        let id = Uuid::now_v7().to_string();
+        let (tx, rx) = oneshot::channel();
+        self.inner.lock().await.insert(id.clone(), tx);
+        (id, rx)
+    }
+
+    pub async fn resolve(&self, id: &str, outcome: QuestionOutcome) -> bool {
+        let mut map = self.inner.lock().await;
+        if let Some(tx) = map.remove(id) {
+            let _ = tx.send(outcome);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 /// Payload emitted on the `grok://update` event — the raw SessionUpdate JSON,
 /// plus the session id it belongs to (so the frontend can route updates for
 /// side-channel sessions like inspiration generation away from the main
@@ -126,16 +206,17 @@ pub fn spawn_dispatcher(
     app: AppHandle,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<AcpClientMessage>,
     permissions: Permissions,
+    questions: Questions,
 ) {
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            handle_client_message(&app, msg, &permissions).await;
+            handle_client_message(&app, msg, &permissions, &questions).await;
         }
         tracing::info!("grok agent channel closed");
     });
 }
 
-async fn handle_client_message(app: &AppHandle, msg: AcpClientMessage, perms: &Permissions) {
+async fn handle_client_message(app: &AppHandle, msg: AcpClientMessage, perms: &Permissions, questions: &Questions) {
     match msg {
         AcpClientMessage::SessionNotification(b) => {
             let update = serialize_session_update(&b.request.update);
@@ -153,13 +234,7 @@ async fn handle_client_message(app: &AppHandle, msg: AcpClientMessage, perms: &P
         AcpClientMessage::RequestPermission(b) => {
             let req = &b.request;
             let session_id_str = req.session_id.0.as_ref().to_string();
-            let (id, rx) = perms.register(&session_id_str).await;
 
-            // Build the frontend payload. RequestPermissionRequest has
-            // `session_id` (SessionId) and `options` (Vec<PermissionOption>);
-            // each option has `option_id` (PermissionOptionId), `name` (String),
-            // `kind` (PermissionOptionKind). The toolCallId/title live inside
-            // an optional `update` sub-object we don't model here.
             let options: Vec<PermissionOptionFrontend> = req
                 .options
                 .iter()
@@ -169,6 +244,33 @@ async fn handle_client_message(app: &AppHandle, msg: AcpClientMessage, perms: &P
                     title: o.name.clone(),
                 })
                 .collect();
+
+            // Auto-approve: if the permission mode is "always-approve", pick the
+            // first allow/allow_always option and respond immediately.
+            let perm_mode = crate::permission_config::read_permission_mode();
+            if perm_mode == "always-approve" {
+                let auto_option = options
+                    .iter()
+                    .find(|o| o.kind == "allow" || o.kind == "allow_always")
+                    .or_else(|| options.first());
+                let response = if let Some(opt) = auto_option {
+                    acp::RequestPermissionResponse::new(
+                        acp::RequestPermissionOutcome::Selected(
+                            acp::SelectedPermissionOutcome::new(acp::PermissionOptionId::new(
+                                Arc::from(opt.option_id.as_str()),
+                            )),
+                        ),
+                    )
+                } else {
+                    acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled)
+                };
+                tracing::info!(session_id = %session_id_str, "auto-approved permission (always-approve mode)");
+                let _ = b.response_tx.send(Ok(response));
+                return;
+            }
+
+            let (id, rx) = perms.register(&session_id_str).await;
+
             let frontend = PermissionFrontend {
                 request_id: id,
                 session_id: session_id_str,
@@ -266,11 +368,133 @@ async fn handle_client_message(app: &AppHandle, msg: AcpClientMessage, perms: &P
         AcpClientMessage::WaitForTerminalExit(b) => deny_fs_terminal(b.response_tx),
         AcpClientMessage::KillTerminalCommand(b) => deny_fs_terminal(b.response_tx),
         AcpClientMessage::ExtMethod(b) => {
-            let err = acp::Error::new(
-                acp::ErrorCode::MethodNotFound.into(),
-                "ext method unsupported".to_string(),
-            );
-            let _ = b.response_tx.send(Err(err));
+            let method = b.request.method.as_ref().to_string();
+            let raw_str = b.request.params.get();
+            let params: Value = serde_json::from_str(raw_str).unwrap_or(Value::Null);
+
+            if method == "x.ai/question" || method == "_codebuddy.ai/question"
+                || method == "x.ai/ask_user_question" || method == "_codebuddy.ai/ask_user_question"
+            {
+                let tool_call_id = params
+                    .get("toolCallId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let session_id = params
+                    .get("sessionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let title = params
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Question")
+                    .to_string();
+                let timeout = params
+                    .get("timeout")
+                    .and_then(|v| v.as_u64());
+
+                // AskUserQuestionExtRequest has no `title`; fall back to first question
+                // text so the UI still has a heading.
+                let mut items = Vec::new();
+                if let Some(arr) = params.get("questions").and_then(|v| v.as_array()) {
+                    for (i, q) in arr.iter().enumerate() {
+                        let qid = q.get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let qid = if qid.is_empty() { format!("q-{i}") } else { qid };
+                        let question = q.get("question")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let mut options = Vec::new();
+                        let opts_key = q.get("options")
+                            .or_else(|| q.get("answers"));
+                        if let Some(opts) = opts_key.and_then(|v| v.as_array()) {
+                            for o in opts {
+                                // Prefer human-visible label; wire objects use
+                                // `{label, description, preview?}`.
+                                if let Some(s) = o.as_str() {
+                                    options.push(s.to_string());
+                                } else if let Some(s) = o.get("label").and_then(|v| v.as_str()) {
+                                    options.push(s.to_string());
+                                } else if let Some(s) = o.get("option").and_then(|v| v.as_str()) {
+                                    options.push(s.to_string());
+                                } else if let Some(s) = o.get("id").and_then(|v| v.as_str()) {
+                                    options.push(s.to_string());
+                                }
+                            }
+                        }
+                        items.push(QuestionItem { id: qid, question, options });
+                    }
+                }
+
+                let title = if title == "Question" {
+                    items
+                        .first()
+                        .map(|q| q.question.clone())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(title)
+                } else {
+                    title
+                };
+
+                let (req_id, rx) = questions.register().await;
+                let frontend = QuestionFrontend {
+                    request_id: req_id,
+                    session_id,
+                    tool_call_id,
+                    title,
+                    questions: items,
+                    timeout,
+                };
+                tracing::info!(request_id = %frontend.request_id, "emitting grok://question");
+                let _ = app.emit("grok://question", frontend);
+
+                // Timeout / drop → Cancelled (same model text as user cancel).
+                let outcome = rx.await.unwrap_or(QuestionOutcome::Cancelled);
+                // Must match AskUserQuestionExtResponse:
+                // { "outcome": "accepted"|"cancelled", "answers"?: {...}, "annotations"?: {...} }
+                // Nested maps under "outcome" fail with:
+                // "invalid type: map, expected variant identifier".
+                let ext_response_value = match outcome {
+                    QuestionOutcome::Accepted {
+                        answers,
+                        annotations,
+                    } => {
+                        let mut v = serde_json::json!({
+                            "outcome": "accepted",
+                            "answers": answers,
+                        });
+                        if let Some(anns) = annotations {
+                            if !anns.is_empty() {
+                                v.as_object_mut()
+                                    .expect("object")
+                                    .insert(
+                                        "annotations".into(),
+                                        serde_json::to_value(anns)
+                                            .unwrap_or(Value::Null),
+                                    );
+                            }
+                        }
+                        v
+                    }
+                    QuestionOutcome::Cancelled => {
+                        serde_json::json!({ "outcome": "cancelled" })
+                    }
+                };
+                let raw = serde_json::value::to_raw_value(&ext_response_value)
+                    .expect("question response serialization");
+                let resp = acp::ExtResponse::new(raw.into());
+                let _ = b.response_tx.send(Ok(resp));
+            } else {
+                let err = acp::Error::new(
+                    acp::ErrorCode::MethodNotFound.into(),
+                    format!("ext method unsupported: {method}"),
+                );
+                let _ = b.response_tx.send(Err(err));
+            }
         }
     }
 }

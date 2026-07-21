@@ -29,6 +29,9 @@ import {
   ArchiveIcon,
   WbPinIcon,
   WbUnpinIcon,
+  MyFilesIconV2,
+  BookIcon,
+  LightbulbIcon,
 } from "@/foundation/components/Icon/icons";
 
 const NAV = [
@@ -157,6 +160,96 @@ function SessionContextMenu({ x, y, sessionId, sessionTitle, isPinned, onClose, 
             <span>删除</span>
           </button>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "更多" 侧栏按钮的弹出菜单 — 仿 WorkBuddy Dropdown 交互。
+ * 菜单项：我的文件 / 资料库 / 灵感。
+ */
+function MoreDropdown({
+  onNavigate,
+  activeNav,
+}: {
+  onNavigate: (label: string) => void;
+  onToast?: (message: string) => void;
+  activeNav: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleEsc);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleEsc);
+    };
+  }, [open]);
+
+  const isActive = activeNav === "更多" || activeNav === "资料库" || activeNav === "灵感" || activeNav === "我的文件";
+
+  const ITEMS: { id: string; label: string; icon: React.ReactNode; action: () => void }[] = [
+    {
+      id: "my_files",
+      label: "我的文件",
+      icon: <MyFilesIconV2 size="md" />,
+      action: () => { setOpen(false); onNavigate("我的文件"); },
+    },
+    {
+      id: "library",
+      label: "资料库",
+      icon: <BookIcon size="md" />,
+      action: () => { setOpen(false); onNavigate("资料库"); },
+    },
+    {
+      id: "inspiration",
+      label: "灵感",
+      icon: <LightbulbIcon size="md" />,
+      action: () => { setOpen(false); onNavigate("灵感"); },
+    },
+  ];
+
+  return (
+    <div className="sidebar__more-wrap" ref={containerRef}>
+      <button
+        className={
+          "sidebar__nav-item" + (isActive ? " sidebar__nav-item--active" : "")
+        }
+        onClick={() => setOpen((o) => !o)}
+      >
+        <WbMoreNavIcon size="md" />
+        <span>更多</span>
+        <span className="sidebar__nav-sub">资料库·灵感</span>
+      </button>
+      {open && (
+        <div className="sidebar__more-popover" role="menu">
+          {ITEMS.map((item) => (
+            <button
+              key={item.id}
+              className={
+                "sidebar__more-item" +
+                (activeNav === item.label ? " sidebar__more-item--active" : "")
+              }
+              role="menuitem"
+              onClick={item.action}
+            >
+              <span className="sidebar__more-item-icon">{item.icon}</span>
+              <span className="sidebar__more-item-label">{item.label}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -391,11 +484,7 @@ export function Sidebar({
             <span>{label}</span>
           </button>
         ))}
-        <button className="sidebar__nav-item" onClick={() => onNavigate("更多")}>
-          <WbMoreNavIcon size="md" />
-          <span>更多</span>
-          <span className="sidebar__nav-sub">资料库·灵感</span>
-        </button>
+        <MoreDropdown onNavigate={onNavigate} onToast={onToast} activeNav={activeNav} />
       </nav>
 
       <div className="sidebar__content">

@@ -36,6 +36,8 @@ import type {
   SubscriptionStatus,
 } from "./types";
 
+import type { QuestionRequest } from "@/stores/question-store";
+
 // ---------- commands ----------
 
 export interface AuthStatus {
@@ -191,6 +193,24 @@ export async function grokResolvePermission(
   await invoke<void>("grok_resolve_permission", {
     requestId,
     optionId: outcome.optionId ?? null,
+    cancelled: outcome.cancelled ?? false,
+  });
+}
+
+export async function grokResolveQuestion(
+  requestId: string,
+  outcome: {
+    /** Keyed by question text. Values are option labels (or string arrays for multi-select). */
+    answers?: Record<string, string | string[]>;
+    /** Per-question notes/preview, keyed by question text. Freeform uses notes. */
+    annotations?: Record<string, { preview?: string; notes?: string }>;
+    cancelled?: boolean;
+  }
+): Promise<void> {
+  await invoke<void>("grok_resolve_question", {
+    requestId,
+    answers: outcome.answers ?? null,
+    annotations: outcome.annotations ?? null,
     cancelled: outcome.cancelled ?? false,
   });
 }
@@ -723,6 +743,8 @@ export async function subscribeGrokEvents(handlers: {
   onModelsUpdate?: (p: unknown) => void;
   /** Fired on background task lifecycle (`task_backgrounded`/`task_completed`). */
   onTaskUpdate?: (p: unknown) => void;
+  /** Fired when the agent asks a question (`x.ai/question`). */
+  onQuestion?: (q: QuestionRequest) => void;
 }): Promise<UnlistenFn> {
   const unlisteners: UnlistenFn[] = [];
   const wire = async <T>(event: string, cb: ((p: T) => void) | undefined) => {
@@ -751,6 +773,7 @@ export async function subscribeGrokEvents(handlers: {
   await wire("grok://permission-mode", handlers.onPermissionMode);
   await wire("grok://models-update", handlers.onModelsUpdate);
   await wire("grok://task-update", handlers.onTaskUpdate);
+  await wire<QuestionRequest>("grok://question", handlers.onQuestion);
 
   return () => unlisteners.forEach((u) => u());
 }

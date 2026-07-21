@@ -2,29 +2,60 @@ import { create } from "zustand";
 import type { PermissionRequest } from "@/lib/types";
 
 /**
- * Permission requests queue. The backend emits `grok://permission` whenever
- * the agent asks for approval (write/edit/execute). The UI shows the head of
- * the queue as a modal; resolving it calls `grok_resolve_permission` and the
- * backend unblocks the agent's oneshot.
- *
- * Note: Zustand store objects are plain records — no JS getters. Components
- * read `queue[0]` via the selector hook instead.
+ * Permission requests indexed by sessionId. Each session owns its own queue
+ * so the inline permission card only shows requests for the active session,
+ * and switching conversations is never blocked.
  */
 interface PermissionState {
-  queue: PermissionRequest[];
+  /** sessionId → ordered queue of pending permission requests. */
+  queues: Record<string, PermissionRequest[]>;
   /** Push a new request emitted by the backend. */
   request: (p: PermissionRequest) => void;
-  /** Remove a request from the queue (without resolving the agent). */
-  dismiss: (requestId: string) => void;
+  /** Remove a request from its session's queue (without resolving the agent). */
+  dismiss: (requestId: string, sessionId?: string) => void;
 }
 
 export const usePermissionStore = create<PermissionState>((set) => ({
-  queue: [],
-  request: (p) => set((s) => ({ queue: [...s.queue, p] })),
-  dismiss: (requestId) =>
-    set((s) => ({ queue: s.queue.filter((q) => q.requestId !== requestId) })),
+  queues: {},
+  request: (p) =>
+    set((s) => {
+      const sid = p.sessionId || "__global";
+      const prev = s.queues[sid] ?? [];
+      return { queues: { ...s.queues, [sid]: [...prev, p] } };
+    }),
+  dismiss: (requestId, sessionId) =>
+    set((s) => {
+      if (sessionId) {
+        const sid = sessionId;
+        const prev = s.queues[sid];
+        if (!prev) return s;
+        return {
+          queues: {
+            ...s.queues,
+            [sid]: prev.filter((q) => q.requestId !== requestId),
+          },
+        };
+      }
+      const queues = { ...s.queues };
+      for (const sid of Object.keys(queues)) {
+        queues[sid] = queues[sid].filter((q) => q.requestId !== requestId);
+      }
+      return { queues };
+    }),
 }));
 
-/** Selector for the head of the queue (the modal to render). */
-export const selectPermissionHead = (s: PermissionState): PermissionRequest | null =>
-  s.queue[0] ?? null;
+/** Select the first pending permission for a given session. */
+export const selectPermissionForSession =
+  (sessionId: string | null) =>
+  (s: PermissionState): PermissionRequest | null => {
+    if (!sessionId) return null;
+    return s.queues[sessionId]?.[0] ?? null;
+  };
+
+/** Legacy: head of all queues (used nowhere after migration to inline). */
+export const selectPermissionHead = (s: PermissionState): PermissionRequest | null => {
+  for (const sid of Object.keys(s.queues)) {
+    if (s.queues[sid].length > 0) return s.queues[sid][0];
+  }
+  return null;
+};

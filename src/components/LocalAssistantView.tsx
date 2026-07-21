@@ -38,7 +38,7 @@ export function LocalAssistantView({
   const setDraft = useSessionsStore((s) => s.setDraft);
   return (
     <div className="local-assistant">
-      <header className="local-assistant__header">
+      <header className="local-assistant__header" data-tauri-drag-region>
         <h1 className="local-assistant__title">本地助理</h1>
         <span className="local-assistant__conn-label">已连接：</span>
         <span className="local-assistant__conn-chip">

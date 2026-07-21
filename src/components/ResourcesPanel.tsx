@@ -12,7 +12,6 @@
  *  - 触发 "落盘"（强制 flush 未写 memory）
  */
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import {
   BookIcon,
   SearchIcon,
@@ -21,29 +20,23 @@ import {
   DeleteIcon,
   RefreshCwIcon,
   SparklesIcon,
-  LightbulbIcon,
 } from "@/foundation/components/Icon/icons";
 import {
-  inspirationGenerate,
   memoryDelete,
   memoryFlush,
   memoryList,
   memoryRewrite,
   memorySave,
 } from "@/lib/grok-client";
-import { registerForeignUpdateListener } from "@/stores/session-store";
-import type { InspirationCard, MemoryEntry, PromptComplete } from "@/lib/types";
+import type { MemoryEntry } from "@/lib/types";
 
 interface ResourcesPanelProps {
   cwd?: string;
   onToast?: (msg: string) => void;
+  initialTab?: "library" | "inspiration";
 }
 
 export function ResourcesPanel({ cwd, onToast }: ResourcesPanelProps) {
-  // Tab state kept as a string so TS doesn't narrow it after early returns —
-  // we render both tabs' headers in one branch and conditionally show bodies.
-  const [tab, setTab] = useState<"library" | "inspiration">("library");
-  const isInspiration = (tab as string) === "inspiration";
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
@@ -62,8 +55,8 @@ export function ResourcesPanel({ cwd, onToast }: ResourcesPanelProps) {
   }, [cwd, onToast]);
 
   useEffect(() => {
-    if (tab === "library") reload();
-  }, [tab, reload]);
+    reload();
+  }, [reload]);
 
   const handleSave = useCallback(
     async (scope: string, path: string, content: string, isNew: boolean) => {
@@ -143,8 +136,7 @@ export function ResourcesPanel({ cwd, onToast }: ResourcesPanelProps) {
   return (
     <div className="resources-panel">
       <div className="resources-panel__header">
-        <h2 className="resources-panel__title">资料库·灵感</h2>
-        {!isInspiration && (
+        <h2 className="resources-panel__title">资料库</h2>
           <div className="resources-panel__header-actions">
             <button
               className="resources-panel__action-btn"
@@ -171,28 +163,8 @@ export function ResourcesPanel({ cwd, onToast }: ResourcesPanelProps) {
               <RefreshCwIcon size="sm" /> 刷新
             </button>
           </div>
-        )}
       </div>
 
-      <div className="resources-panel__tabs">
-        <button
-          className={`resources-panel__tab ${!isInspiration ? "resources-panel__tab--active" : ""}`}
-          onClick={() => setTab("library")}
-        >
-          <BookIcon size="sm" /> 资料库
-        </button>
-        <button
-          className={`resources-panel__tab ${isInspiration ? "resources-panel__tab--active" : ""}`}
-          onClick={() => setTab("inspiration")}
-        >
-          <LightbulbIcon size="sm" /> 灵感
-        </button>
-      </div>
-
-      {isInspiration && <InspirationTab cwd={cwd} />}
-
-      {!isInspiration && (
-        <>
       <div className="resources-panel__search">
         <SearchIcon size="md" className="resources-panel__search-icon" />
         <input
@@ -292,8 +264,6 @@ export function ResourcesPanel({ cwd, onToast }: ResourcesPanelProps) {
           }
         />
       )}
-        </>
-      )}
     </div>
   );
 }
@@ -370,178 +340,3 @@ function MemoryEditor({
   );
 }
 
-// 灵感 tab：grok 没有对应能力，显示说明 + 引导到资料库
-/**
- * 灵感 tab - 用 grok 真实生成兴趣领域的灵感卡片
- *
- * 实现：用户选一个兴趣分类（AI/产品/办公/学习/健康/数据 等，对应 WorkBuddy
- * 的 i18n 分类），点"生成"，后端开一个 side-channel grok session，prompt 让
- * grok 输出结构化 JSON 卡片。前端通过 foreignUpdateListener 收集流式响应，
- * complete 后解析 JSON 渲染卡片。
- *
- * 为个性化，后端会把用户最近的 memory 笔记拼进 prompt（来自资料库）。
- * 这样内容不是 mock，是 grok 基于用户画像真实生成的。
- *
- * 对应 WorkBuddy 的 inspiration-panel（WorkBuddy 自己 hard-disabled 此功能，
- * 依赖外部内容源；OpenBuddy 用 grok LLM 能力替代内容源）。
- */
-function InspirationTab({ cwd }: { cwd?: string }) {
-  const [category, setCategory] = useState<string>("ai_models");
-  const [count, setCount] = useState(5);
-  const [loading, setLoading] = useState(false);
-  const [cards, setCards] = useState<InspirationCard[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [streamingPreview, setStreamingPreview] = useState("");
-
-  const handleGenerate = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setCards([]);
-    setStreamingPreview("");
-    try {
-      const started = await inspirationGenerate(category, cwd, count);
-      // Register a foreign-update listener to accumulate grok's streamed JSON
-      // for this session without polluting the main transcript.
-      let acc = "";
-      const unsubscribe = registerForeignUpdateListener(started.sessionId, (u) => {
-        if (((u as { sessionUpdate?: string }).sessionUpdate ?? (u as { type?: string }).type) === "agent_message_chunk") {
-          const chunk = u as unknown as { content?: { text?: string }[] };
-          const delta = Array.isArray(chunk.content)
-            ? chunk.content.map((c: { text?: string }) => c.text ?? "").join("")
-            : ((chunk.content as unknown as { text?: string })?.text ?? "");
-          if (delta) {
-            acc += delta;
-            setStreamingPreview(acc);
-          }
-        }
-      });
-      // Listen for completion of this specific session.
-      const completeUnlisten = await listen<PromptComplete>("grok://complete", (e) => {
-        if (e.payload.sessionId === started.sessionId) {
-          // Parse the accumulated JSON (grok may wrap in ```json fences despite
-          // our instruction — strip them defensively).
-          const cleaned = acc
-            .trim()
-            .replace(/^```(?:json)?\s*/i, "")
-            .replace(/\s*```$/i, "")
-            .trim();
-          try {
-            const parsed = JSON.parse(cleaned) as InspirationCard[];
-            if (Array.isArray(parsed)) {
-              setCards(parsed);
-            } else {
-              setError("grok 返回格式异常，请重试");
-            }
-          } catch {
-            setError("无法解析 grok 的输出，请重试或换个分类");
-          }
-          setLoading(false);
-          setStreamingPreview("");
-          unsubscribe();
-          completeUnlisten();
-        }
-      });
-      // Safety timeout: if no complete in 90s, give up.
-      setTimeout(() => {
-        if (loading) {
-          setLoading(false);
-          setError("生成超时，请重试");
-          unsubscribe();
-          completeUnlisten();
-        }
-      }, 90_000);
-    } catch (e) {
-      setError(`生成失败：${String(e).replace(/^Error:\s*/, "")}`);
-      setLoading(false);
-    }
-  }, [category, count, cwd]);
-
-  return (
-    <div className="inspiration-tab">
-      <div className="inspiration-tab__controls">
-        <label className="inspiration-tab__field">
-          <span>兴趣分类</span>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
-            {CATEGORIES.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="inspiration-tab__field">
-          <span>数量（1-10）</span>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={count}
-            onChange={(e) =>
-              setCount(Math.max(1, Math.min(10, Number(e.target.value) || 5)))
-            }
-          />
-        </label>
-        <button
-          className="inspiration-tab__generate"
-          onClick={handleGenerate}
-          disabled={loading}
-        >
-          {loading ? "生成中…" : "生成灵感"}
-        </button>
-      </div>
-
-      <p className="inspiration-tab__hint">
-        内容由 grok 基于你的资料库（memory）真实生成，每条卡片含标题、摘要和行动建议。
-      </p>
-
-      {error && <div className="inspiration-tab__error">{error}</div>}
-
-      {loading && streamingPreview && (
-        <div className="inspiration-tab__streaming">
-          <div className="inspiration-tab__streaming-label">grok 正在生成…</div>
-          <pre className="inspiration-tab__streaming-text">{streamingPreview.slice(-400)}</pre>
-        </div>
-      )}
-
-      {cards.length > 0 && (
-        <div className="inspiration-tab__cards">
-          {cards.map((card, i) => (
-            <article key={i} className="inspiration-card">
-              <div className="inspiration-card__index">#{i + 1}</div>
-              <div className="inspiration-card__body">
-                <h4 className="inspiration-card__title">{card.title}</h4>
-                <p className="inspiration-card__summary">{card.summary}</p>
-                {card.takeaway && (
-                  <p className="inspiration-card__takeaway">
-                    <SparklesIcon size="sm" /> {card.takeaway}
-                  </p>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-
-      {!loading && cards.length === 0 && !error && (
-        <div className="inspiration-tab__empty">
-          <LightbulbIcon size="xl" color="var(--wb-text-tertiary)" />
-          <p>选择兴趣分类，点「生成灵感」让 grok 为你策划内容。</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const CATEGORIES: { key: string; label: string }[] = [
-  { key: "ai_models", label: "AI 大模型" },
-  { key: "product_design", label: "产品设计" },
-  { key: "office", label: "办公协作" },
-  { key: "learning", label: "学习提升" },
-  { key: "health", label: "健康养生" },
-  { key: "data_analysis", label: "数据分析" },
-  { key: "travel", label: "旅行出行" },
-  { key: "career", label: "职业发展" },
-  { key: "industry", label: "行业趋势" },
-  { key: "efficiency", label: "效率工具" },
-  { key: "pm", label: "项目管理" },
-];

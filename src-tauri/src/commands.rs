@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use serde::Serialize;
 use tauri::State;
 
-use crate::bridge::{PermissionOutcome, Permissions};
+use crate::bridge::{PermissionOutcome, Permissions, QuestionOutcome, Questions};
 use crate::grok::{self, GrokHandle, InitOutcome};
 use crate::sessions::{self, SessionSummary, WorkspaceInfo};
 
@@ -69,6 +69,7 @@ pub async fn grok_init(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     permissions: State<'_, Permissions>,
+    questions: State<'_, Questions>,
     cwd: Option<String>,
 ) -> Result<InitResult, String> {
     let cwd = cwd.map(PathBuf::from).unwrap_or_else(default_cwd);
@@ -85,7 +86,7 @@ pub async fn grok_init(
 
     // Start the dispatcher that forwards agent→client messages to events.
     // `rx` is moved in; the dispatcher owns it for the app lifetime.
-    crate::bridge::spawn_dispatcher(app, rx, permissions.share());
+    crate::bridge::spawn_dispatcher(app, rx, permissions.share(), questions.share());
 
     // Keep the cancel token so the agent thread can be stopped at shutdown.
     // (The rx half is now owned by the dispatcher; we hold only tx + cancel.)
@@ -230,6 +231,77 @@ pub async fn grok_resolve_permission(
         (false, None) => PermissionOutcome::Cancelled,
     };
     Ok(permissions.resolve(&request_id, outcome).await)
+}
+
+/// Resolve a pending question request from the frontend.
+///
+/// Wire contract for grok's `AskUserQuestionExtResponse`:
+/// - `cancelled: true` → `{ "outcome": "cancelled" }`
+/// - otherwise → `{ "outcome": "accepted", "answers": {...}, "annotations"?: {...} }`
+///
+/// `answers` must be keyed by **question text** (not synthetic id). Values may
+/// be a string or a list of strings (multi-select). Freeform answers use
+/// label `"Other"` with the typed text in `annotations[question].notes`.
+#[tauri::command]
+pub async fn grok_resolve_question(
+    questions: State<'_, Questions>,
+    request_id: String,
+    answers: Option<std::collections::HashMap<String, serde_json::Value>>,
+    annotations: Option<std::collections::HashMap<String, QuestionAnnotationDto>>,
+    cancelled: Option<bool>,
+) -> Result<bool, String> {
+    let outcome = if cancelled.unwrap_or(false) {
+        QuestionOutcome::Cancelled
+    } else if let Some(raw_answers) = answers {
+        let mut normalized = std::collections::HashMap::new();
+        for (k, v) in raw_answers {
+            let labels = match v {
+                serde_json::Value::String(s) => {
+                    if s.is_empty() {
+                        continue;
+                    }
+                    vec![s]
+                }
+                serde_json::Value::Array(arr) => arr
+                    .into_iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+                _ => continue,
+            };
+            if !labels.is_empty() {
+                normalized.insert(k, labels);
+            }
+        }
+        let anns = annotations.map(|m| {
+            m.into_iter()
+                .map(|(k, v)| {
+                    (
+                        k,
+                        crate::bridge::QuestionAnnotation {
+                            preview: v.preview,
+                            notes: v.notes,
+                        },
+                    )
+                })
+                .collect()
+        });
+        QuestionOutcome::Accepted {
+            answers: normalized,
+            annotations: anns,
+        }
+    } else {
+        QuestionOutcome::Cancelled
+    };
+    Ok(questions.resolve(&request_id, outcome).await)
+}
+
+/// DTO for per-question annotations from the frontend.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionAnnotationDto {
+    pub preview: Option<String>,
+    pub notes: Option<String>,
 }
 
 /// Switch the model used by an existing session. Maps to grok's

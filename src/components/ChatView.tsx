@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSessionStore } from "@/stores/session-store";
 import { useSessionsStore } from "@/stores/sessions-store";
+import { createMarkdownHostConfig } from "@/lib/markdown-host";
 import { MessageItem } from "./MessageItem";
 import { Composer } from "./Composer";
 import { PlanPanel } from "./PlanPanel";
 import { RewindBar } from "./RewindBar";
+import { PermissionInlineCard } from "./PermissionDialog";
+import { QuestionInlineCard } from "./QuestionInlineCard";
 import type { ModelOption } from "./ModelSelector";
 import type { HomeModeId } from "./home-scenes";
 import type { AgentEntry } from "@/lib/types";
@@ -60,6 +63,16 @@ export function ChatView({
   );
   const [planOpen, setPlanOpen] = useState(false);
 
+  const markdownConfig = useMemo(
+    () =>
+      createMarkdownHostConfig({
+        cwd,
+        sessionId,
+        onToast,
+      }),
+    [cwd, sessionId, onToast],
+  );
+
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = scrollRef.current;
@@ -105,11 +118,17 @@ export function ChatView({
               key={m.id}
               message={m}
               streaming={streaming && m.id === streamingMessageId}
+              markdownConfig={markdownConfig}
+              cwd={cwd}
+              onToast={onToast}
             />
           ))}
         </div>
       </div>
       <div className="chatview__footer">
+        {/* Inline permission / question cards: session-scoped, never block sidebar. */}
+        <PermissionInlineCard sessionId={sessionId} />
+        <QuestionInlineCard sessionId={sessionId} />
         {streaming && usage.totalTokens ? (
           <div className="chatview__tokens">{usage.totalTokens} tokens</div>
         ) : null}
@@ -134,6 +153,8 @@ export function ChatView({
           workspaces={workspaces}
           onSelectWorkspace={onSelectWorkspace}
           showDisclaimer
+          permissionInline
+          onToast={onToast}
           draft={draft}
           draftKey={sessionId ?? undefined}
           onDraftChange={

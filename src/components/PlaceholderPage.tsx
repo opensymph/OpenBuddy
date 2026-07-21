@@ -4,6 +4,8 @@ import { ProjectsPanel } from "./ProjectsPanel";
 import { ExpertsPanel } from "./experts-panel";
 import { AutomationPanel } from "./AutomationPanel";
 import { ResourcesPanel } from "./ResourcesPanel";
+import { InspirationPanel } from "./InspirationPanel";
+import { MyFilesPanel } from "./MyFilesPanel";
 import { PluginsPanel } from "./PluginsPanel";
 import { MarketplacePanel } from "./MarketplacePanel";
 import { DiscoverPanel } from "./DiscoverPanel";
@@ -117,8 +119,16 @@ export function PlaceholderPage({
     );
   }
 
-  if (label === "更多") {
-    return <ResourcesPanel cwd={cwd} onToast={onToast} />;
+  if (label === "更多" || label === "资料库") {
+    return <ResourcesPanel cwd={cwd} onToast={onToast} initialTab="library" />;
+  }
+
+  if (label === "灵感") {
+    return <InspirationPanel cwd={cwd} onToast={onToast} onLaunch={onLaunch ? (p: string) => onLaunch(p) : undefined} />;
+  }
+
+  if (label === "我的文件") {
+    return <MyFilesPanel cwd={cwd} onToast={onToast} />;
   }
 
   // 其他功能显示占位页面

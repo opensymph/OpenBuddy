@@ -440,7 +440,7 @@ export function Composer({
             onNavigateConnectors={onNavigateConnectors}
           />
           {permissionInline && (
-            <PermissionPicker onToast={onToast} triggerLabel="默认权限" />
+            <PermissionPicker onToast={onToast} />
           )}
           <div className="wb-composer__spacer" />
           {showModelPicker ? (

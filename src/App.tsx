@@ -5,7 +5,7 @@ import { HomePage } from "./components/HomePage";
 import { ChatView } from "./components/ChatView";
 import { PlaceholderPage } from "./components/PlaceholderPage";
 import { Toast } from "./components/Toast";
-import { PermissionDialog } from "./components/PermissionDialog";
+// PermissionDialog is now inline in ChatView (PermissionInlineCard), not a global modal.
 import { ThemeProvider } from "./components/ThemeProvider";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SearchOverlay } from "./components/SearchOverlay";
@@ -17,6 +17,7 @@ import type { ModelOption } from "./components/ModelSelector";
 import { useSessionStore } from "./stores/session-store";
 import { useSessionsStore } from "./stores/sessions-store";
 import { usePermissionStore } from "./stores/permission-store";
+import { useQuestionStore } from "./stores/question-store";
 import { TopbarTitle } from "./components/TopbarTitle";
 import {
   grokInit,
@@ -83,6 +84,7 @@ function Shell() {
   const sessionStore = useSessionStore;
   const sessionsStore = useSessionsStore;
   const permissionStore = usePermissionStore;
+  const questionStore = useQuestionStore;
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -212,6 +214,10 @@ function Shell() {
               "info",
             );
           },
+          onQuestion: (q) => {
+            console.log('[OpenBuddy] Received grok://question:', q);
+            questionStore.getState().request(q);
+          },
         });
 
         // Sidebar now shows two groups: 任务 (the inbox cwd's sessions) +
@@ -260,7 +266,7 @@ function Shell() {
     return () => {
       if (unlisten) unlisten();
     };
-  }, [sessionStore, sessionsStore, permissionStore]);
+  }, [sessionStore, sessionsStore, permissionStore, questionStore]);
 
   const currentSessionId = sessionsStore((s) => s.currentSessionId);
   // The active session's sidebar entry (title + cwd), looked up across the
@@ -598,39 +604,58 @@ function Shell() {
           activeNav={activeNav}
         />
         <main className="app__main">
-          {/* 自动化面板的页签工具栏本身就是顶部拖拽条（对齐 WorkBuddy），
-              侧栏展开时隐藏全局 topbar，避免把页签压低 48px。
-              侧栏折叠时保留 topbar（展开/新建任务按钮的唯一直达入口）。
+          {/* 全局 topbar 仅对话页需要：会话标题 +（侧栏折叠时）展开/新建。
+              首页、助理、自动化等其它页面不占 48px，各自顶栏贴顶即可。
+              侧栏折叠且非对话页时，用悬浮按钮提供展开入口。
               注:Tauri 2 只认 data-tauri-drag-region(CSS 的 -webkit-app-region
               不生效);按钮等子元素不是拖拽目标,不影响点击。 */}
-          {!(placeholderView === "自动化" && !sidebarCollapsed) && (
-          <header className="main-topbar" data-tauri-drag-region>
-            <div className="main-topbar__left">
-              {sidebarCollapsed && (
-                <>
-                  <button
-                    className="main-topbar__btn"
-                    aria-label="展开侧边栏"
-                    data-tip="展开侧边栏"
-                    onClick={() => setSidebarCollapsed(false)}
-                  >
-                    <SidebarToggleIcon size="md" />
-                  </button>
-                  <button
-                    className="main-topbar__btn"
-                    aria-label="新建任务"
-                    data-tip="新建任务"
-                    onClick={handleNewSession}
-                  >
-                    <WbNewTaskIcon size="md" />
-                  </button>
-                </>
-              )}
-              {!placeholderView && currentSessionId && (
+          {!placeholderView && currentSessionId ? (
+            <header className="main-topbar" data-tauri-drag-region>
+              <div className="main-topbar__left">
+                {sidebarCollapsed && (
+                  <>
+                    <button
+                      className="main-topbar__btn"
+                      aria-label="展开侧边栏"
+                      data-tip="展开侧边栏"
+                      onClick={() => setSidebarCollapsed(false)}
+                    >
+                      <SidebarToggleIcon size="md" />
+                    </button>
+                    <button
+                      className="main-topbar__btn"
+                      aria-label="新建任务"
+                      data-tip="新建任务"
+                      onClick={handleNewSession}
+                    >
+                      <WbNewTaskIcon size="md" />
+                    </button>
+                  </>
+                )}
                 <TopbarTitle title={currentTitle} onRename={handleRenameTitle} />
-              )}
-            </div>
-          </header>
+              </div>
+            </header>
+          ) : (
+            sidebarCollapsed && (
+              <div className="main-topbar-float">
+                <button
+                  className="main-topbar__btn"
+                  aria-label="展开侧边栏"
+                  data-tip="展开侧边栏"
+                  onClick={() => setSidebarCollapsed(false)}
+                >
+                  <SidebarToggleIcon size="md" />
+                </button>
+                <button
+                  className="main-topbar__btn"
+                  aria-label="新建任务"
+                  data-tip="新建任务"
+                  onClick={handleNewSession}
+                >
+                  <WbNewTaskIcon size="md" />
+                </button>
+              </div>
+            )
           )}
           {initError ? (
             <div className="app__notice app__notice--err">
@@ -702,7 +727,6 @@ function Shell() {
         </main>
       </div>
       <Toast message={toast} />
-      <PermissionDialog />
       <SearchOverlay
         open={searchOpen}
         onClose={() => setSearchOpen(false)}

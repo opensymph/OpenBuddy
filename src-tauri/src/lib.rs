@@ -18,9 +18,10 @@ mod notifications;
 mod permission_config;
 mod providers;
 mod sessions;
+mod shell_fs;
 mod skills;
 
-use bridge::Permissions;
+use bridge::{Permissions, Questions};
 use commands::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -32,6 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .manage(Permissions::new())
+        .manage(Questions::new())
         .invoke_handler(tauri::generate_handler![
             // session lifecycle
             commands::grok_init,
@@ -44,6 +46,7 @@ pub fn run() {
             commands::grok_send,
             commands::grok_cancel,
             commands::grok_resolve_permission,
+            commands::grok_resolve_question,
             commands::grok_rename_session,
             commands::grok_delete_session,
             commands::grok_set_session_pinned,
@@ -130,6 +133,13 @@ pub fn run() {
             automations::automations_run,
             automations::automation_records_archive,
             automations::automation_records_delete,
+            // shell / filesystem (markdown links, path click, apply write)
+            shell_fs::open_url,
+            shell_fs::open_path,
+            shell_fs::reveal_in_folder,
+            shell_fs::path_stat,
+            shell_fs::write_text_file,
+            shell_fs::browse_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenBuddy");

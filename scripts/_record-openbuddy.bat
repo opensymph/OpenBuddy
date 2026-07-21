@@ -17,16 +17,16 @@ set RAW=%OUT%\_raw-openbuddy.mp4
 set GIF=%OUT%\hero-openbuddy.gif
 
 REM Region (update if OpenBuddy window is moved/resized)
-set /a RX=1236
-set /a RY=152
-set /a RW=1200
-set /a RH=931
+set /a RX=551
+set /a RY=268
+set /a RW=1644
+set /a RH=932
 
 echo [1/2] Recording %DUR%s of desktop to %RAW% ...
 "%FF%" -y -f gdigrab -framerate 30 -i desktop -t %DUR% -vcodec libx264 -preset ultrafast -crf 28 "%RAW%"
 
 echo [2/2] Cropping to OpenBuddy region and converting to GIF ...
-"%FF%" -y -i "%RAW%" -vf "crop=%RW%:%RH%:%RX%:%RY%,fps=15,scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen=maxcolors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" -loop 0 "%GIF%"
+"%FF%" -y -i "%RAW%" -vf "crop=%RW%:%RH%:%RX%:%RY%,fps=12,scale=800:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" -loop 0 "%GIF%"
 
 echo.
 echo DONE
