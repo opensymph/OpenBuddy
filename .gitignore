@@ -9,7 +9,6 @@ dist-ssr/
 
 # Tauri / Rust
 src-tauri/target/
-src-tauri/Cargo.lock
 src-tauri/gen/schemas/
 
 # Editor / OS
