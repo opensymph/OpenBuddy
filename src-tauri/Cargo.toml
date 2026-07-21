@@ -1,6 +1,6 @@
 [package]
 name = "openbuddy"
-version = "0.1.0"
+version = "0.2.0"
 description = "OpenBuddy — a WorkBuddy-style desktop shell for the grok agent"
 authors = ["OpenBuddy"]
 edition = "2021"

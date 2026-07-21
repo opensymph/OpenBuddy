@@ -1567,6 +1567,164 @@
 .wb-composer__add:hover {
   background: var(--wb-bg-hover);
 }
+
+/* ── InputAddMenu (加号弹出菜单) ────────────────────────── */
+.iam-wrap {
+  position: relative;
+}
+.iam-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 180px;
+  background: var(--wb-bg-primary);
+  border: 1px solid var(--wb-border-default);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.06);
+  padding: 6px 0;
+  z-index: 1200;
+  animation: iam-fadeIn .15s ease-out;
+}
+@keyframes iam-fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.iam-group {
+  padding: 2px 0;
+}
+.iam-divider {
+  height: 1px;
+  margin: 4px 12px;
+  background: var(--wb-border-default);
+}
+.iam-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background .1s;
+  user-select: none;
+}
+.iam-item:hover,
+.iam-item--active {
+  background: var(--wb-bg-hover);
+}
+.iam-item__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--wb-text-medium);
+}
+.iam-item__label {
+  flex: 1;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--wb-text-strong);
+  white-space: nowrap;
+}
+.iam-item__chevron {
+  display: flex;
+  align-items: center;
+  color: var(--wb-text-tertiary);
+  margin-left: auto;
+}
+
+/* ── submenu (二级面板) ── */
+.iam-submenu {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 0;
+  min-width: 200px;
+  max-width: 280px;
+  background: var(--wb-bg-primary);
+  border: 1px solid var(--wb-border-default);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.06);
+  padding: 6px 0;
+  z-index: 1201;
+  animation: iam-fadeIn .12s ease-out;
+}
+.iam-submenu__scroll {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.iam-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  color: var(--wb-text-strong);
+  transition: background .1s;
+}
+.iam-sub-item:hover {
+  background: var(--wb-bg-hover);
+}
+.iam-sub-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--wb-brand-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.iam-sub-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  min-width: 0;
+}
+.iam-sub-name {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--wb-text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.iam-sub-desc {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--wb-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.iam-sub-empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--wb-text-tertiary);
+  text-align: center;
+}
+.iam-sub-footer {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--wb-brand-primary);
+  cursor: pointer;
+  border-top: 1px solid var(--wb-border-default);
+  margin-top: 4px;
+  text-align: center;
+}
+.iam-sub-footer:hover {
+  background: var(--wb-bg-hover);
+}
+
 .wb-composer__tool {
   width: 32px;
   height: 32px;

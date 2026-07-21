@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, X, type LucideIcon } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { AddIcon, ChevronDownIcon, SendPlaneIcon } from "@/foundation/components/Icon/icons";
+import { ChevronDownIcon, SendPlaneIcon } from "@/foundation/components/Icon/icons";
 import { ModelSelector, type ModelOption } from "./ModelSelector";
 import { WorkspacePicker } from "./WorkspacePicker";
 import { PermissionPicker } from "./PermissionPicker";
 import { SlashCommands } from "./SlashCommands";
+import { InputAddMenu } from "./InputAddMenu";
+import type { HomeModeId } from "./home-scenes";
+import type { AgentEntry } from "@/lib/types";
 import type { WorkspaceInfo } from "@/lib/grok-client";
 
 /**
@@ -49,6 +52,10 @@ export function Composer({
   draft,
   draftKey,
   onDraftChange,
+  onSelectMode,
+  onSelectExpert,
+  onSelectSkill,
+  onNavigateConnectors,
 }: {
   streaming: boolean;
   disabled?: boolean;
@@ -97,6 +104,14 @@ export function Composer({
   draftKey?: string | number;
   /** 用户输入时回调,父组件据此把草稿写回 store。 */
   onDraftChange?: (text: string) => void;
+  /** 加号菜单:选择模式(日常办公/代码开发/设计创意)。 */
+  onSelectMode?: (modeId: HomeModeId) => void;
+  /** 加号菜单:选择专家。 */
+  onSelectExpert?: (agent: AgentEntry) => void;
+  /** 加号菜单:选择技能(插入 /skillName)。 */
+  onSelectSkill?: (skillName: string) => void;
+  /** 加号菜单:跳转到连接器管理面板。 */
+  onNavigateConnectors?: () => void;
 }) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -408,17 +423,22 @@ export function Composer({
           onPick={handleSlashPick}
         />
         <div className="wb-composer__footer">
-          <button
-            className="wb-composer__add"
-            onClick={(e) => {
-              e.stopPropagation();
-              pickFiles();
+          <InputAddMenu
+            onPickFiles={pickFiles}
+            onSelectMode={onSelectMode}
+            onSelectExpert={onSelectExpert}
+            onSelectSkill={(name) => {
+              onSelectSkill?.(name);
+              if (!onSelectSkill) {
+                updateText((prev) => {
+                  const prefix = prev.endsWith(" ") || prev === "" ? "" : " ";
+                  return prev + prefix + `/${name} `;
+                });
+                requestAnimationFrame(() => ref.current?.focus());
+              }
             }}
-            aria-label="添加附件"
-            title="添加附件"
-          >
-            <AddIcon size="md" />
-          </button>
+            onNavigateConnectors={onNavigateConnectors}
+          />
           {permissionInline && (
             <PermissionPicker onToast={onToast} triggerLabel="默认权限" />
           )}

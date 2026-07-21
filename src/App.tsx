@@ -679,6 +679,8 @@ function Shell() {
               onRewound={handleRewound}
               onForked={handleForked}
               onToast={showToast}
+              onSelectExpert={handleStartWithExpert}
+              onNavigateConnectors={() => setPlaceholderView("专家·技能·连接器")}
             />
           ) : (
             <HomePage
@@ -693,6 +695,8 @@ function Shell() {
               cwd={cwdRef.current}
               workspaces={workspaces}
               onSelectWorkspace={handleSelectWorkspace}
+              onSelectExpert={handleStartWithExpert}
+              onNavigateConnectors={() => setPlaceholderView("专家·技能·连接器")}
             />
           )}
         </main>

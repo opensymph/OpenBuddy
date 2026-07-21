@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Composer } from "./Composer";
 import type { ModelOption } from "./ModelSelector";
 import type { WorkspaceInfo } from "@/lib/grok-client";
+import type { AgentEntry } from "@/lib/types";
 import { MoreIcon } from "@/foundation/components/Icon/icons";
 import { useHorizontalScroll } from "./use-horizontal-scroll";
 import { useSessionsStore, HOME_DRAFT_KEY } from "@/stores/sessions-store";
@@ -53,6 +54,9 @@ export function HomePage({
   cwd,
   workspaces,
   onSelectWorkspace,
+  onSelectMode,
+  onSelectExpert,
+  onNavigateConnectors,
 }: {
   onSend: (text: string) => void;
   streaming: boolean;
@@ -65,6 +69,9 @@ export function HomePage({
   cwd?: string;
   workspaces?: WorkspaceInfo[];
   onSelectWorkspace?: (cwd: string) => void;
+  onSelectMode?: (modeId: HomeModeId) => void;
+  onSelectExpert?: (agent: AgentEntry) => void;
+  onNavigateConnectors?: () => void;
 }) {
   const [modeId, setModeId] = useState<HomeModeId>("working");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>(undefined);
@@ -300,6 +307,12 @@ export function HomePage({
             draft={homeDraft}
             draftKey={HOME_DRAFT_KEY}
             onDraftChange={(t) => setDraft(HOME_DRAFT_KEY, t)}
+            onSelectMode={(id) => {
+              setModeId(id);
+              onSelectMode?.(id);
+            }}
+            onSelectExpert={onSelectExpert}
+            onNavigateConnectors={onNavigateConnectors}
           />
         </section>
       </div>

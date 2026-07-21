@@ -1,0 +1,52 @@
+diff --git a/crates/codegen/xai-grok-shell/src/agent/mvp_agent/session_lifecycle.rs b/crates/codegen/xai-grok-shell/src/agent/mvp_agent/session_lifecycle.rs
+index 9af1944..ff6f321 100644
+--- a/crates/codegen/xai-grok-shell/src/agent/mvp_agent/session_lifecycle.rs
++++ b/crates/codegen/xai-grok-shell/src/agent/mvp_agent/session_lifecycle.rs
+@@ -288,13 +288,29 @@ impl MvpAgent {
+     /// check is required. Runs both opportunistically and from the join-handle
+     /// supervisor (`ensure_session_supervisor`).
+     pub(super) fn sweep_dead_sessions(&self) {
+-        let dead: Vec<acp::SessionId> = self
+-            .session_threads
+-            .borrow()
+-            .iter()
+-            .filter(|(_, t)| t.is_finished())
+-            .map(|(id, _)| id.clone())
+-            .collect();
++        // OpenBuddy patch: the supervisor tick (ensure_session_supervisor) fires
++        // every SESSION_SUPERVISOR_TICK on the same single-threaded LocalSet that
++        // drives load_session / handle_evict_sessions / drain_old_session_thread.
++        // A reentrant `session_threads.borrow_mut()` held across an await on that
++        // thread makes this `borrow()` panic ("RefCell already mutably borrowed").
++        // The outer catch_unwind already keeps supervision alive, but the panic
++        // spams the log every tick. Use try_borrow and skip the tick on contention
++        // instead -- a deferred sweep on the next tick is harmless (the thread is
++        // already dead; we only lose up to one tick of promptness). Same defensive
++        // treatment for the cleanup borrow_mut below.
++        let dead: Vec<acp::SessionId> = match self.session_threads.try_borrow() {
++            Ok(threads) => threads
++                .iter()
++                .filter(|(_, t)| t.is_finished())
++                .map(|(id, _)| id.clone())
++                .collect(),
++            Err(_) => {
++                tracing::trace!(
++                    "session_threads contended during supervisor sweep; skipping tick"
++                );
++                return;
++            }
++        };
+         for id in dead {
+             if self.sessions.borrow().contains_key(&id) {
+                 tracing::warn!(
+@@ -303,7 +319,9 @@ impl MvpAgent {
+                 );
+                 self.reap_dead_session(&id);
+             } else {
+-                self.session_threads.borrow_mut().remove(&id);
++                if let Ok(mut threads) = self.session_threads.try_borrow_mut() {
++                    threads.remove(&id);
++                }
+                 self.session_live_state.borrow_mut().remove(&id);
+                 tracing::debug!(
+                     session_id = % id.0,

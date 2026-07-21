@@ -6,6 +6,8 @@ import { Composer } from "./Composer";
 import { PlanPanel } from "./PlanPanel";
 import { RewindBar } from "./RewindBar";
 import type { ModelOption } from "./ModelSelector";
+import type { HomeModeId } from "./home-scenes";
+import type { AgentEntry } from "@/lib/types";
 import type { WorkspaceInfo } from "@/lib/grok-client";
 
 /** Center chat column: scrollable message list + composer pinned at bottom. */
@@ -21,6 +23,9 @@ export function ChatView({
   onRewound,
   onForked,
   onToast,
+  onSelectMode,
+  onSelectExpert,
+  onNavigateConnectors,
 }: {
   onSend: (text: string) => void;
   onCancel: () => void;
@@ -36,6 +41,9 @@ export function ChatView({
   onForked?: (newSessionId: string) => void;
   /** Surface transient feedback from the rewind/fork toolbar. */
   onToast?: (msg: string) => void;
+  onSelectMode?: (modeId: HomeModeId) => void;
+  onSelectExpert?: (agent: AgentEntry) => void;
+  onNavigateConnectors?: () => void;
 }) {
   const messages = useSessionStore((s) => s.messages);
   const streaming = useSessionStore((s) => s.streaming);
@@ -131,6 +139,9 @@ export function ChatView({
           onDraftChange={
             sessionId ? (t) => setDraft(sessionId, t) : undefined
           }
+          onSelectMode={onSelectMode}
+          onSelectExpert={onSelectExpert}
+          onNavigateConnectors={onNavigateConnectors}
         />
       </div>
     </div>
