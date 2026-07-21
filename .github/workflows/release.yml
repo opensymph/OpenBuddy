@@ -52,6 +52,15 @@ jobs:
           toolchain: stable-x86_64-pc-windows-msvc
           targets: x86_64-pc-windows-msvc
 
+      - name: Apply grok-build patches
+        shell: bash
+        run: |
+          cd vendor/grok-build
+          for patch in ../../patches/grok-build/*.patch; do
+            echo "Applying $patch ..."
+            git apply --check "$patch" 2>/dev/null && git apply "$patch" || echo "  (already applied or skipped)"
+          done
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -105,6 +114,14 @@ jobs:
         with:
           toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Apply grok-build patches
+        run: |
+          cd vendor/grok-build
+          for patch in ../../patches/grok-build/*.patch; do
+            echo "Applying $patch ..."
+            git apply --check "$patch" 2>/dev/null && git apply "$patch" || echo "  (already applied or skipped)"
+          done
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
