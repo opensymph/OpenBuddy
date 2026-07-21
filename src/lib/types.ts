@@ -338,13 +338,28 @@ export interface RunningTask {
   sessionId?: string;
 }
 
-// ---------- automations (local scheduler) ----------
+// ---------- automations (local scheduler, WorkBuddy 1:1) ----------
 
-export type Schedule =
-  | { type: "once"; at: string }
-  | { type: "daily"; time: string }
-  | { type: "weekly"; weekdays: number[]; time: string }
-  | { type: "monthly"; day: number; time: string };
+export type ScheduleFreq = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "HOURLY";
+
+/** RRULE-like recurring schedule. 双周 = WEEKLY interval 2; 按间隔 = HOURLY + intervalHours. */
+export interface AutomationSchedule {
+  freq: ScheduleFreq;
+  interval: number;
+  /** Weekday codes "MO".."SU". */
+  byday: string[];
+  /** Days of month 1..=31 (MONTHLY/YEARLY). */
+  bymonthday: number[];
+  /** Months 1..=12 (YEARLY). */
+  bymonth: number[];
+  byhour: number;
+  byminute: number;
+  intervalHours: number;
+}
+
+export type AutomationScheduleType = "recurring" | "once";
+export type AutomationPermissionMode = "fullAccess" | "default";
+export type AutomationStatus = "ACTIVE" | "PAUSED";
 
 // ---------- inspiration (灵感面板) ----------
 
@@ -495,12 +510,159 @@ export interface Automation {
   id: string;
   name: string;
   prompt: string;
-  expertId?: string;
+  /** Comma-separated workspace directories (first entry is the run cwd). */
+  cwds: string;
+  status: AutomationStatus;
   modelId?: string;
-  cwd?: string;
-  schedule: Schedule;
-  status: "active" | "paused";
+  modelIsThinking?: boolean;
+  skills: string[];
+  expertId?: string;
+  expertName?: string;
+  connectorIds: string[];
+  permissionMode: AutomationPermissionMode;
+  scheduleType: AutomationScheduleType;
+  schedule: AutomationSchedule;
+  /** Once mode: YYYY-MM-DD. */
+  scheduledDate?: string;
+  /** Once mode: HH:MM. */
+  scheduledTime?: string;
+  /** Recurring validity window (YYYY-MM-DD, inclusive). */
+  validFromDate?: string;
+  validUntilDate?: string;
+  pushToWeChat: boolean;
   lastRunAt?: string;
   nextRunAt?: string;
   createdAt: string;
+}
+
+/** A single run-history entry (运行记录). */
+export interface AutomationRunRecord {
+  id: string;
+  automationId: string;
+  automationName: string;
+  status: "running" | "success" | "failed" | string;
+  startedAt: string;
+  finishedAt?: string;
+  sessionId?: string;
+  archived: boolean;
+}
+
+export interface AutomationSnapshot {
+  automations: Automation[];
+  records: AutomationRunRecord[];
+}
+
+// ---------- unified market catalogs (built-in static data) ----------
+
+/** A browsable skill in the static 技能 marketplace (截图 3). The actual install
+ *  path for openbuddy is local (import a SKILL.md / folder); these entries just
+ *  reproduce the WorkBuddy catalog UI. */
+export interface SkillCatalogItem {
+  id: string;
+  name: string;
+  desc: string;
+  /** Segment the card belongs to: 推荐 / SkillHub / 套件. */
+  seg: "recommend" | "skillhub" | "plugin";
+  /** Category id within the segment's filter row ("" = uncategorized). */
+  cat: string;
+  /** Shows in the 精选技能 row at the top. */
+  featured?: boolean;
+  /** Optional recommendation label on a featured card. */
+  reason?: string;
+  /** Brand color hint for the letter-avatar icon (e.g. "#1d6f42"). */
+  color?: string;
+}
+
+/** A skill category chip label (截图 3 filter row). */
+export interface SkillCategory {
+  id: string;
+  zh: string;
+}
+
+/** A browsable connector in the static 连接器 list (截图 4). These are MCP-type
+ *  connectors; "+" opens the MCP 服务管理 modal rather than one-click install. */
+export interface ConnectorCatalogItem {
+  id: string;
+  name: string;
+  desc: string;
+  /** Brand color hint for the letter-avatar icon. */
+  color?: string;
+}
+
+/** Raw mcp.json file content returned by the `mcp_config_read` command. */
+export interface McpConfigFile {
+  filePath: string;
+  content: string;
+}
+
+// ---------- expert marketplace (read live from a local data dir) ----------
+
+/** One expert category (mirrors the Rust `ExpertCategory`). */
+export interface ExpertCategory {
+  id: string;
+  zh: string;
+  en: string;
+}
+
+/** One expert / team card (mirrors the Rust `ExpertItem`, camelCase). */
+export interface ExpertItem {
+  id: string;
+  cat: string;
+  name: string;
+  nameEn?: string;
+  /** Profession / 职称 — the bold card title. */
+  title: string;
+  titleEn?: string;
+  desc: string;
+  tags: string[];
+  /** "agent" | "team". */
+  type: "agent" | "team" | string;
+  author?: string;
+  /** operationalTag text — the 特邀专家 ribbon; absent when not set. */
+  ribbon?: string;
+  /** Default starter prompt (zh) — used to seed the summon persona. */
+  init?: string;
+  opc?: boolean;
+  /** Pinned sort slot (displayPosition). */
+  pos?: number;
+  updated?: string;
+  /** Absolute local avatar path — feed to `expertsThumbnail`. */
+  avatarLocal?: string;
+  /** COS fallback URL (used if the local file is missing). */
+  avatarUrl?: string;
+}
+
+/** Catalog payload returned by `experts_load`. */
+export interface ExpertCatalog {
+  root: string;
+  categories: ExpertCategory[];
+  experts: ExpertItem[];
+  /** 精选场景 parsed from `<root>/_meta/featuredScenes.json` (may be empty). */
+  featuredScenes: CatalogFeaturedScene[];
+}
+
+/** A 精选场景 as returned by the backend (local banner resolved when present). */
+export interface CatalogFeaturedScene {
+  id: string;
+  zh: string;
+  expertIds: string[];
+  /** Absolute local banner path — feed to `expertsImageBytes`. */
+  imageLocal?: string;
+  /** COS fallback URL. */
+  imageUrl?: string;
+}
+
+/** A featured-scene banner as rendered (catalog scene or the gradient fallback
+ *  authored in `featured-scenes.ts`). */
+export interface FeaturedScene {
+  id: string;
+  zh: string;
+  expertIds: string[];
+  /** Absolute local banner path — feed to `expertsImageBytes`. */
+  imageLocal?: string;
+  /** Remote banner image (COS); when absent, the local gradient is used. */
+  image?: string;
+  /** Gradient endpoints for the offline fallback banner. */
+  from?: string;
+  to?: string;
 }

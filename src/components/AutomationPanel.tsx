@@ -1,459 +1,1098 @@
 /**
- * 自动化面板 — 1:1 复刻 WorkBuddy automation
+ * 自动化面板 — 1:1 复刻 WorkBuddy automation-panel/index.tsx。
  *
- * UI 结构对齐 WorkBuddy project-detail-page 中的自动化:
- *  - 调度类型: daily / workday / weekly / monthly / once / interval
- *  - 任务卡片: 带状态指示灯 + 调度描述 + 上/下次运行 + 操作按钮
- *  - 执行记录 tab
- *  - 创建/编辑弹窗: 与 WB 对齐的字段布局
- *  - 推荐模板: 空状态时展示
+ * 三态（对应截图 1-3）：
+ *  1. 定时任务：顶部 Segmented 页签；空态 hero（闹钟图标 + 「开启你的第一个自动化任务吧」
+ *     + 「+ 添加自动化」）+「自动化任务模版」12 模板网格；有任务时按 当前/已暂停 分组列表。
+ *  2. 添加/编辑：全页表单（AutomationEditPage）。
+ *  3. 运行记录：空态（暂无运行记录）/ 按 今天·昨天·周X 分组的记录列表 + 状态筛选。
+ *
+ * 数据：automations_snapshot（本地 JSON 存储 + 进程内调度器）。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AgentToolIcon,
-  AddCircleIcon,
-  SearchIcon,
-  PlayIcon,
-  PauseIcon,
+  AddIcon,
+  AlarmClockIcon,
+  ArchiveIcon,
+  AtmAddFromTemplateIcon,
+  AtmBatchManageIcon,
+  AutomationEmptyAlarmIcon,
+  AutomationEmptyRecordsIcon,
+  CheckBoldIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  CirclePauseIcon,
   DeleteIcon,
-  EditToolIcon,
-  RefreshCwIcon,
-  ClockIcon,
-  XCloseIcon,
-  CirclePlayIcon,
+  ErrorCircleIcon,
+  MoreDotsIcon,
+  PlayIcon,
+  ResumeCircleIcon,
+  RunningStatusIcon,
+  SearchIcon,
 } from "@/foundation/components/Icon/icons";
 import {
+  agentsList,
+  automationRecordsArchive,
+  automationRecordsDelete,
   automationsDelete,
-  automationsList,
   automationsRun,
   automationsSave,
-  automationsToggle,
+  automationsSetStatus,
+  automationsSnapshot,
+  grokListWorkspaces,
+  mcpList,
+  providersList,
+  skillsList,
+  type WorkspaceInfo,
 } from "@/lib/grok-client";
-import type { Automation, Schedule } from "@/lib/types";
+import type {
+  AgentEntry,
+  Automation,
+  AutomationRunRecord,
+  AutomationSnapshot,
+  AutomationStatus,
+  SkillInfo,
+} from "@/lib/types";
+import { AUTOMATION_TEMPLATES, type AutomationTemplate } from "./automation/template-config";
+import {
+  DAY_LABELS,
+  automationFromDraft,
+  buildDraft,
+  describeSchedule,
+  describeValidity,
+  draftFromAutomation,
+  formatRunTime,
+  scheduledAtIso,
+  startsInLabel,
+  validateDraft,
+  type AutomationDraft,
+} from "./automation/schedule-utils";
+import { Checkbox, Segmented } from "./automation/controls";
+import { AutomationTemplateGrid } from "./automation/AutomationTemplateGrid";
+import { AutomationEditPage, type ModelOption } from "./automation/AutomationEditPage";
+import { AutomationPermissionConfirmDialog } from "./automation/AutomationPermissionConfirmDialog";
+import { usePermissionConfirm } from "./automation/usePermissionConfirm";
+import type { ConnectorOption } from "./automation/ConnectorSelector";
 
 interface AutomationPanelProps {
   onToast?: (msg: string) => void;
+  onNavigate?: (label: string) => void;
 }
 
-type TriggerType = "schedule" | "interval" | "once";
-type ScheduleFrequency = "daily" | "workday" | "weekly_monday" | "monthly_1st";
+type TabKey = "tasks" | "records";
+type RecordFilter = "all" | "success" | "failed" | "running" | "archived";
 
-const FREQUENCY_OPTIONS: { value: ScheduleFrequency; label: string }[] = [
-  { value: "daily", label: "每天" },
-  { value: "workday", label: "工作日" },
-  { value: "weekly_monday", label: "每周一" },
-  { value: "monthly_1st", label: "每月1日" },
+const RECORD_FILTERS: { key: RecordFilter; label: string }[] = [
+  { key: "all", label: "全部" },
+  { key: "success", label: "成功" },
+  { key: "failed", label: "失败" },
+  { key: "running", label: "运行中" },
+  { key: "archived", label: "已归档" },
 ];
 
-const TEMPLATES: {
-  name: string; prompt: string; schedule: Schedule;
-  triggerType: TriggerType; frequency?: ScheduleFrequency;
-}[] = [
-  {
-    name: "每日 AI 资讯",
-    prompt: "帮我整理今天 AI 领域的重要新闻，按重要性排序，每条给一句话摘要和来源。",
-    schedule: { type: "daily", time: "09:00" },
-    triggerType: "schedule", frequency: "daily",
-  },
-  {
-    name: "每天 5 个英语单词",
-    prompt: "推荐 5 个实用的英语单词，给出释义、例句和记忆技巧。",
-    schedule: { type: "daily", time: "08:00" },
-    triggerType: "schedule", frequency: "daily",
-  },
-  {
-    name: "工作日周报模板",
-    prompt: "帮我生成本周工作周报的模板，包含本周完成、下周计划、风险与求助三部分。",
-    schedule: { type: "weekly", weekdays: [5], time: "17:00" },
-    triggerType: "schedule", frequency: "weekly_monday",
-  },
-  {
-    name: "睡前故事",
-    prompt: "写一个适合儿童的睡前故事，主题温暖，300 字左右。",
-    schedule: { type: "daily", time: "21:00" },
-    triggerType: "schedule", frequency: "daily",
-  },
-  {
-    name: "代码仓库健康检查",
-    prompt: "检查当前项目目录下的代码健康状况，包括：未使用的依赖、过时的包、常见的 lint 问题。给出改进建议。",
-    schedule: { type: "weekly", weekdays: [1], time: "10:00" },
-    triggerType: "schedule", frequency: "weekly_monday",
-  },
-  {
-    name: "每日站会提醒",
-    prompt: "帮我准备每日站会内容：昨天完成了什么、今天计划做什么、有什么阻碍需要帮助。",
-    schedule: { type: "daily", time: "09:30" },
-    triggerType: "schedule", frequency: "workday",
-  },
-];
+function recordStatusLabel(item: AutomationRunRecord): string {
+  if (item.status === "running") return "运行中";
+  if (item.status === "success") return "成功";
+  if (item.status === "failed") return "失败";
+  return item.status;
+}
 
-export function AutomationPanel({ onToast }: AutomationPanelProps) {
-  const [automations, setAutomations] = useState<Automation[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<Automation | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [tab, setTab] = useState<"list" | "records">("list");
+function RecordStatusIcon({ item }: { item: AutomationRunRecord }) {
+  if (item.status === "running") {
+    return (
+      <span className="atm-status-icon-spinning" style={{ display: "inline-flex" }}>
+        <RunningStatusIcon size={16} color="#00C29A" />
+      </span>
+    );
+  }
+  if (item.status === "success") return <CheckBoldIcon size={16} color="var(--wb-color-text-disabled, #000)" />;
+  if (item.status === "failed") return <ErrorCircleIcon size={16} />;
+  return <CheckIcon size={16} />;
+}
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try { setAutomations(await automationsList()); }
-    catch (e) { onToast?.(`加载自动化失败：${String(e).replace(/^Error:\s*/, "")}`); }
-    finally { setLoading(false); }
-  }, [onToast]);
-
-  useEffect(() => { reload(); }, [reload]);
-
-  const handleToggle = useCallback(async (a: Automation) => {
-    setBusy(a.id);
-    try { await automationsToggle(a.id, a.status !== "active"); reload(); }
-    catch (e) { onToast?.(`切换失败：${String(e).replace(/^Error:\s*/, "")}`); }
-    finally { setBusy(null); }
-  }, [onToast, reload]);
-
-  const handleRun = useCallback(async (a: Automation) => {
-    setBusy(a.id);
-    try { await automationsRun(a.id); onToast?.(`已触发「${a.name}」，结果将出现在侧栏`); reload(); }
-    catch (e) { onToast?.(`运行失败：${String(e).replace(/^Error:\s*/, "")}`); }
-    finally { setBusy(null); }
-  }, [onToast, reload]);
-
-  const handleDelete = useCallback(async (a: Automation) => {
-    if (!confirm(`确定删除自动化「${a.name}」？`)) return;
-    try { await automationsDelete(a.id); onToast?.("已删除"); reload(); }
-    catch (e) { onToast?.(`删除失败：${String(e).replace(/^Error:\s*/, "")}`); }
-  }, [onToast, reload]);
-
-  const handleSave = useCallback(async (a: Automation) => {
-    try { await automationsSave(a); onToast?.(a.id ? "已保存" : "已创建"); setEditing(null); reload(); }
-    catch (e) { onToast?.(`保存失败：${String(e).replace(/^Error:\s*/, "")}`); }
-  }, [onToast, reload]);
-
-  const filtered = automations.filter((a) => a.name.toLowerCase().includes(query.toLowerCase()));
-  const activeCount = automations.filter((a) => a.status === "active").length;
-
+/** 通用确认弹窗（替代 WB 的 Modal.confirm）。 */
+function ConfirmDialog({
+  title,
+  content,
+  okText,
+  danger,
+  onOk,
+  onCancel,
+}: {
+  title: string;
+  content: string;
+  okText: string;
+  danger?: boolean;
+  onOk: () => void;
+  onCancel: () => void;
+}) {
   return (
-    <div className="atm-panel">
-      {/* Header */}
-      <div className="atm-panel-header">
-        <div className="atm-panel-header-left">
-          <h2 className="atm-panel-title">自动化</h2>
-          <div className="atm-panel-stats">
-            <span className="atm-panel-stat">
-              <AgentToolIcon size="sm" />
-              {automations.length} 个任务
-            </span>
-            <span className="atm-panel-stat atm-panel-stat--active">
-              <CirclePlayIcon size="sm" />
-              {activeCount} 个运行中
-            </span>
-          </div>
-        </div>
-        <div className="atm-panel-header-actions">
-          <button className="atm-panel-refresh" onClick={reload} disabled={loading} title="刷新">
-            <RefreshCwIcon size="sm" />
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="atm-confirm-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <h3 className="atm-confirm-title">{title}</h3>
+        <p className="atm-confirm-content">{content}</p>
+        <div className="atm-confirm-actions">
+          <button type="button" className="atm-btn atm-btn--secondary" onClick={onCancel}>
+            取消
           </button>
-          <button className="atm-panel-create-btn" onClick={() => setEditing({
-            id: "", name: "", prompt: "",
-            schedule: { type: "daily", time: "09:00" },
-            status: "active", createdAt: "",
-          })}>
-            <AddCircleIcon size="sm" />
-            <span>创建自动化</span>
+          <button type="button" className={`atm-btn ${danger ? "atm-btn--danger" : "atm-btn--primary"}`} onClick={onOk}>
+            {okText}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Tabs */}
-      <div className="atm-panel-tabs">
-        <button className={`atm-panel-tab${tab === "list" ? " atm-panel-tab--active" : ""}`}
-          onClick={() => setTab("list")}>
-          <AgentToolIcon size="sm" /><span>任务列表</span>
-        </button>
-        <button className={`atm-panel-tab${tab === "records" ? " atm-panel-tab--active" : ""}`}
-          onClick={() => setTab("records")}>
-          <ClockIcon size="sm" /><span>执行记录</span>
-        </button>
+export function AutomationPanel({ onToast, onNavigate }: AutomationPanelProps) {
+  // ---------- 数据 ----------
+  const [snapshot, setSnapshot] = useState<AutomationSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabKey>("tasks");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState<RecordFilter>("all");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [archivedGroupOpen, setArchivedGroupOpen] = useState(true);
+  const [showTemplatePage, setShowTemplatePage] = useState(false);
+
+  // ---------- 编辑态 ----------
+  const [isCreating, setIsCreating] = useState(false);
+  const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
+  const [draft, setDraft] = useState<AutomationDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // ---------- 引用数据（工作空间/模型/技能/专家/连接器） ----------
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [experts, setExperts] = useState<AgentEntry[]>([]);
+  const [connectors, setConnectors] = useState<ConnectorOption[]>([]);
+
+  // ---------- 确认弹窗 ----------
+  const [confirmState, setConfirmState] = useState<{
+    title: string;
+    content: string;
+    okText: string;
+    action: () => Promise<void>;
+  } | null>(null);
+
+  const refresh = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        setSnapshot(await automationsSnapshot());
+      } catch (e) {
+        onToast?.(`加载自动化数据失败：${String(e).replace(/^Error:\s*/, "")}`);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [onToast],
+  );
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    grokListWorkspaces().then(setWorkspaces).catch(() => setWorkspaces([]));
+    providersList()
+      .then((list) => setModels(list.map((m) => ({ id: m.modelId, label: m.name || m.modelId }))))
+      .catch(() => setModels([]));
+    skillsList().then(setSkills).catch(() => setSkills([]));
+    agentsList().then(setExperts).catch(() => setExperts([]));
+    mcpList()
+      .then((list) =>
+        setConnectors(
+          list.map((c) => ({ id: c.name, name: c.name, connected: c.enabled })),
+        ),
+      )
+      .catch(() => setConnectors([]));
+  }, []);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [filterOpen]);
+
+  // ---------- 创建 / 编辑 ----------
+  const handleCreate = useCallback((template?: AutomationTemplate) => {
+    setIsCreating(true);
+    setEditingAutomation(null);
+    setDraft(buildDraft(template));
+    setShowTemplatePage(false);
+  }, []);
+
+  const handleEdit = useCallback((automation: Automation) => {
+    setIsCreating(false);
+    setEditingAutomation(automation);
+    setDraft(draftFromAutomation(automation));
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    setIsCreating(false);
+    setEditingAutomation(null);
+    setDraft(null);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!draft) return;
+    const message = validateDraft(draft, {
+      isCreating,
+      existingScheduledAt: editingAutomation
+        ? scheduledAtIso({
+            scheduledDate: editingAutomation.scheduledDate,
+            scheduledTime: editingAutomation.scheduledTime,
+          })
+        : undefined,
+    });
+    if (message) {
+      onToast?.(message);
+      return;
+    }
+    setSaving(true);
+    try {
+      await automationsSave(automationFromDraft(draft, editingAutomation ?? undefined));
+      handleCloseModal();
+      await refresh(true);
+      onToast?.("自动化任务已保存");
+    } catch (e) {
+      onToast?.(`保存自动化任务失败：${String(e).replace(/^Error:\s*/, "")}`);
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, isCreating, editingAutomation, handleCloseModal, onToast, refresh]);
+
+  const handleFallbackToDefault = useCallback(() => {
+    setDraft((current) => (current ? { ...current, permissionMode: "default" } : current));
+  }, []);
+
+  const {
+    showConfirmDialog: showPermissionConfirm,
+    requestSubmit: requestSaveWithPermissionCheck,
+    requestAction: requestActionWithPermissionCheck,
+    handleConfirm: handlePermissionConfirm,
+    handleCancel: handlePermissionCancel,
+    handleFallbackToDefault: handlePermissionFallback,
+  } = usePermissionConfirm({
+    currentMode: draft?.permissionMode ?? "fullAccess",
+    initialMode: editingAutomation?.permissionMode ?? (editingAutomation ? "fullAccess" : undefined),
+    onConfirmedSubmit: handleSave,
+    onFallbackToDefault: handleFallbackToDefault,
+  });
+
+  const handleDelete = useCallback(() => {
+    if (!editingAutomation) return;
+    const name = editingAutomation.name;
+    const id = editingAutomation.id;
+    setConfirmState({
+      title: `删除 ${name}？`,
+      content: "此操作将永久删除该自动化任务并停止所有后续运行。",
+      okText: "删除自动化任务",
+      action: async () => {
+        try {
+          await automationsDelete(id);
+          handleCloseModal();
+          await refresh(true);
+          onToast?.("自动化任务已删除");
+        } catch (e) {
+          onToast?.(`删除自动化任务失败：${String(e).replace(/^Error:\s*/, "")}`);
+        }
+      },
+    });
+  }, [editingAutomation, handleCloseModal, onToast, refresh]);
+
+  const handleRowDelete = useCallback(
+    (automationId: string) => {
+      const name = snapshot?.automations.find((a) => a.id === automationId)?.name || "";
+      setConfirmState({
+        title: `删除 ${name}？`,
+        content: "此操作将永久删除该自动化任务并停止所有后续运行。",
+        okText: "删除自动化任务",
+        action: async () => {
+          try {
+            await automationsDelete(automationId);
+            await refresh(true);
+            onToast?.("自动化任务已删除");
+          } catch (e) {
+            onToast?.(`删除自动化任务失败：${String(e).replace(/^Error:\s*/, "")}`);
+          }
+        },
+      });
+    },
+    [snapshot, onToast, refresh],
+  );
+
+  const handleTogglePause = useCallback(
+    async (automationId: string, currentStatus: AutomationStatus) => {
+      const next: AutomationStatus = currentStatus === "ACTIVE" ? "PAUSED" : "ACTIVE";
+      try {
+        await automationsSetStatus(automationId, next);
+        await refresh(true);
+      } catch (e) {
+        onToast?.(`保存自动化任务失败：${String(e).replace(/^Error:\s*/, "")}`);
+      }
+    },
+    [onToast, refresh],
+  );
+
+  const handleRunTest = useCallback(
+    async (automationId: string) => {
+      try {
+        await automationsRun(automationId);
+        onToast?.("已触发测试运行。测试运行不会影响正式调度时间。");
+        await refresh(true);
+      } catch (e) {
+        onToast?.(`触发测试运行失败：${String(e).replace(/^Error:\s*/, "")}`);
+      }
+    },
+    [onToast, refresh],
+  );
+
+  const handleTest = useCallback(() => {
+    if (!editingAutomation || !draft || saving) return;
+    const message = validateDraft(draft, { isCreating: false });
+    if (message) {
+      onToast?.(message);
+      return;
+    }
+    requestActionWithPermissionCheck(() => {
+      void (async () => {
+        setSaving(true);
+        try {
+          await automationsSave(automationFromDraft(draft, editingAutomation));
+          await handleRunTest(editingAutomation.id);
+        } finally {
+          setSaving(false);
+        }
+      })();
+    });
+  }, [editingAutomation, draft, saving, onToast, requestActionWithPermissionCheck, handleRunTest]);
+
+  // ---------- 运行记录 ----------
+  const handleArchiveRecord = useCallback(
+    async (itemId: string) => {
+      try {
+        await automationRecordsArchive(itemId, true);
+        await refresh(true);
+        onToast?.("已归档");
+      } catch (e) {
+        onToast?.(`保存自动化任务失败：${String(e).replace(/^Error:\s*/, "")}`);
+      }
+    },
+    [onToast, refresh],
+  );
+
+  const handleDeleteRecord = useCallback(
+    (itemId: string) => {
+      setConfirmState({
+        title: "删除该条运行记录？",
+        content: "此操作将永久删除该条运行记录。",
+        okText: "删除",
+        action: async () => {
+          try {
+            await automationRecordsDelete(itemId);
+            await refresh(true);
+          } catch (e) {
+            onToast?.(`删除自动化任务失败：${String(e).replace(/^Error:\s*/, "")}`);
+          }
+        },
+      });
+    },
+    [onToast, refresh],
+  );
+
+  // ---------- 批量管理 ----------
+  const handleToggleBatchMode = useCallback(() => {
+    setIsBatchMode((prev) => !prev);
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleBatchDelete = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    const ids = new Set(selectedIds);
+    setConfirmState({
+      title: `删除选中的 ${ids.size} 个任务？`,
+      content: "此操作将永久删除选中的自动化任务并停止其所有后续运行。",
+      okText: "删除",
+      action: async () => {
+        let failed = 0;
+        for (const id of ids) {
+          try {
+            await automationsDelete(id);
+          } catch {
+            failed += 1;
+          }
+        }
+        setSelectedIds(new Set());
+        setIsBatchMode(false);
+        if (failed === 0) onToast?.("自动化任务已删除");
+        else onToast?.("删除自动化任务失败");
+        await refresh(true);
+      },
+    });
+  }, [selectedIds, onToast, refresh]);
+
+  // ---------- 派生数据 ----------
+  const scheduledAutomations = useMemo(
+    () => snapshot?.automations.filter((a) => a.status === "ACTIVE") ?? [],
+    [snapshot],
+  );
+  const pausedAutomations = useMemo(
+    () => snapshot?.automations.filter((a) => a.status === "PAUSED") ?? [],
+    [snapshot],
+  );
+  const automationById = useMemo(
+    () => new Map((snapshot?.automations ?? []).map((a) => [a.id, a])),
+    [snapshot],
+  );
+  const { completedItems, archivedItems } = useMemo(() => {
+    const completed: AutomationRunRecord[] = [];
+    const archived: AutomationRunRecord[] = [];
+    for (const item of snapshot?.records ?? []) {
+      if (item.archived) archived.push(item);
+      else completed.push(item);
+    }
+    return { completedItems: completed, archivedItems: archived };
+  }, [snapshot]);
+
+  const query = searchQuery.trim().toLowerCase();
+  const filteredScheduled = useMemo(
+    () => (query ? scheduledAutomations.filter((a) => a.name.toLowerCase().includes(query)) : scheduledAutomations),
+    [scheduledAutomations, query],
+  );
+  const filteredPaused = useMemo(
+    () => (query ? pausedAutomations.filter((a) => a.name.toLowerCase().includes(query)) : pausedAutomations),
+    [pausedAutomations, query],
+  );
+  const filteredRecords = useMemo(() => {
+    let items = [...completedItems, ...archivedItems];
+    if (filterStatus === "success") items = items.filter((i) => i.status === "success" && !i.archived);
+    else if (filterStatus === "failed") items = items.filter((i) => i.status === "failed" && !i.archived);
+    else if (filterStatus === "running") items = items.filter((i) => i.status === "running" && !i.archived);
+    else if (filterStatus === "archived") items = items.filter((i) => i.archived);
+    if (query) {
+      items = items.filter((i) =>
+        (automationById.get(i.automationId)?.name || i.automationName || "").toLowerCase().includes(query),
+      );
+    }
+    return items;
+  }, [completedItems, archivedItems, filterStatus, query, automationById]);
+
+  const groupedRecords = useMemo(() => {
+    const groups: { label: string; items: AutomationRunRecord[] }[] = [];
+    const groupMap = new Map<string, AutomationRunRecord[]>();
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 864e5);
+    const weekdayByJsDay = [DAY_LABELS.SU, DAY_LABELS.MO, DAY_LABELS.TU, DAY_LABELS.WE, DAY_LABELS.TH, DAY_LABELS.FR, DAY_LABELS.SA];
+    const sorted = [...filteredRecords].sort(
+      (a, b) => Date.parse(b.finishedAt || b.startedAt) - Date.parse(a.finishedAt || a.startedAt),
+    );
+    for (const item of sorted) {
+      if (item.archived) continue;
+      const date = new Date(item.finishedAt || item.startedAt);
+      const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      let label: string;
+      if (dateDay.getTime() === today.getTime()) label = "今天";
+      else if (dateDay.getTime() === yesterday.getTime()) label = "昨天";
+      else label = `${weekdayByJsDay[date.getDay()]} (${date.getMonth() + 1}/${date.getDate()})`;
+      if (!groupMap.has(label)) groupMap.set(label, []);
+      groupMap.get(label)!.push(item);
+    }
+    for (const [label, items] of groupMap) groups.push({ label, items });
+    return groups;
+  }, [filteredRecords]);
+
+  const archivedRecords = useMemo(() => filteredRecords.filter((i) => i.archived), [filteredRecords]);
+
+  const showDefaultTemplateGrid =
+    !!snapshot &&
+    scheduledAutomations.length === 0 &&
+    pausedAutomations.length === 0 &&
+    completedItems.length === 0 &&
+    archivedItems.length === 0;
+  const showTemplateEntryButton = !showDefaultTemplateGrid && !showTemplatePage;
+  const allTasksEmpty = scheduledAutomations.length === 0 && pausedAutomations.length === 0;
+  const allRecordsEmpty = completedItems.length === 0 && archivedItems.length === 0;
+  const isToolbarRightHidden =
+    (!showTemplatePage && activeTab === "tasks" && allTasksEmpty && showDefaultTemplateGrid) ||
+    (!showTemplatePage && activeTab === "records" && allRecordsEmpty);
+
+  // ============================================================
+  // 编辑态渲染（截图 2）
+  // ============================================================
+  if ((editingAutomation || isCreating) && draft) {
+    return (
+      <div className="automation-panel code-buddy-automation">
+        <AutomationEditPage
+          mode={isCreating ? "create" : "edit"}
+          draft={draft}
+          setDraft={setDraft}
+          saving={saving}
+          workspaces={workspaces}
+          models={models}
+          skills={skills}
+          experts={experts}
+          connectors={connectors}
+          records={
+            editingAutomation
+              ? (snapshot?.records ?? []).filter((r) => r.automationId === editingAutomation.id)
+              : []
+          }
+          createdAt={editingAutomation?.createdAt}
+          onSave={requestSaveWithPermissionCheck}
+          onClose={handleCloseModal}
+          onTest={isCreating ? undefined : handleTest}
+          onDelete={isCreating ? undefined : handleDelete}
+          onOpenConnectorSettings={() => onNavigate?.("专家·技能·连接器")}
+          onArchiveRecord={handleArchiveRecord}
+          onDeleteRecord={handleDeleteRecord}
+        />
+        <AutomationPermissionConfirmDialog
+          open={showPermissionConfirm}
+          onConfirm={handlePermissionConfirm}
+          onCancel={handlePermissionCancel}
+          onFallbackToDefault={handlePermissionFallback}
+        />
+        {confirmState && (
+          <ConfirmDialog
+            title={confirmState.title}
+            content={confirmState.content}
+            okText={confirmState.okText}
+            danger
+            onOk={() => {
+              const action = confirmState.action;
+              setConfirmState(null);
+              void action();
+            }}
+            onCancel={() => setConfirmState(null)}
+          />
+        )}
       </div>
+    );
+  }
 
-      {/* Search */}
-      <div className="atm-panel-search">
-        <SearchIcon size="sm" className="atm-panel-search-icon" />
-        <input type="text" className="atm-panel-search-input"
-          placeholder="搜索自动化…" value={query} onChange={(e) => setQuery(e.target.value)} />
-      </div>
-
-      {tab === "list" ? (
-        <div className="atm-panel-content">
-          {/* Templates when empty */}
-          {automations.length === 0 && !loading && (
-            <div className="atm-panel-section">
-              <div className="atm-panel-empty-state">
-                <AgentToolIcon size="xl" className="atm-panel-empty-icon" />
-                <h3>开始使用自动化</h3>
-                <p>创建定时任务，让 AI 助理按计划为你工作</p>
-              </div>
-              <h3 className="atm-panel-section-title">推荐模板</h3>
-              <div className="atm-template-grid">
-                {TEMPLATES.map((tpl) => (
-                  <button key={tpl.name} className="atm-template-card" onClick={() => setEditing({
-                    id: "", name: tpl.name, prompt: tpl.prompt,
-                    schedule: tpl.schedule, status: "active", createdAt: "",
-                  })}>
-                    <div className="atm-template-icon"><ClockIcon size="md" /></div>
-                    <div className="atm-template-info">
-                      <div className="atm-template-name">{tpl.name}</div>
-                      <div className="atm-template-schedule">{describeSchedule(tpl.schedule)}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+  // ============================================================
+  // 列表态渲染（截图 1 / 3）
+  // ============================================================
+  return (
+    <div className="automation-panel code-buddy-automation">
+      {/* ---------- 工具栏(顶部拖拽条,Tauri 2 需 data-tauri-drag-region) ---------- */}
+      {showTemplatePage ? (
+        <div className="atm-toolbar atm-toolbar--breadcrumb" data-tauri-drag-region>
+          <div className="atm-toolbar-left">
+            <div className="atm-detail-breadcrumb">
+              <span className="atm-detail-status-icon">
+                <AlarmClockIcon className="atm-task-status-icon atm-task-status-icon--scheduled" />
+              </span>
+              <button type="button" className="atm-detail-breadcrumb-link" onClick={() => setShowTemplatePage(false)}>
+                自动化
+              </button>
+              <span className="atm-detail-breadcrumb-sep">/</span>
+              <span className="atm-detail-breadcrumb-current">从模版添加</span>
             </div>
-          )}
-
-          {/* Task list */}
-          {filtered.length === 0 && automations.length > 0 && !loading && (
-            <div className="atm-panel-empty">无匹配的自动化</div>
-          )}
-          <div className="atm-task-list">
-            {filtered.map((a) => (
-              <div key={a.id} className={`atm-task-card${a.status !== "active" ? " atm-task-card--paused" : ""}`}>
-                <div className="atm-task-card-left">
-                  <div className={`atm-task-status-dot${a.status === "active" ? " atm-task-status-dot--active" : ""}`} />
-                  <div className="atm-task-card-icon"><AgentToolIcon size="md" /></div>
-                </div>
-                <div className="atm-task-card-body">
-                  <div className="atm-task-card-name">{a.name}</div>
-                  <div className="atm-task-card-prompt" title={a.prompt}>{a.prompt}</div>
-                  <div className="atm-task-card-meta">
-                    <span className="atm-task-card-schedule">
-                      <ClockIcon size="sm" /> {describeSchedule(a.schedule)}
-                    </span>
-                    {a.nextRunAt && a.status === "active" && (
-                      <span className="atm-task-card-next">下次：{formatTime(a.nextRunAt)}</span>
-                    )}
-                    {a.lastRunAt && (
-                      <span className="atm-task-card-last">上次：{formatTime(a.lastRunAt)}</span>
-                    )}
-                  </div>
-                </div>
-                <div className="atm-task-card-actions">
-                  <button className="atm-task-action" onClick={() => handleRun(a)}
-                    disabled={busy === a.id} title="立即运行">
-                    <PlayIcon size="sm" />
-                  </button>
-                  <button className="atm-task-action" onClick={() => handleToggle(a)}
-                    disabled={busy === a.id} title={a.status === "active" ? "暂停" : "启用"}>
-                    {a.status === "active" ? <PauseIcon size="sm" /> : <CirclePlayIcon size="sm" />}
-                  </button>
-                  <button className="atm-task-action" onClick={() => setEditing(a)} title="编辑">
-                    <EditToolIcon size="sm" />
-                  </button>
-                  <button className="atm-task-action atm-task-action--danger"
-                    onClick={() => handleDelete(a)} title="删除">
-                    <DeleteIcon size="sm" />
-                  </button>
-                </div>
-              </div>
-            ))}
           </div>
-          {loading && <div className="atm-panel-empty">加载中…</div>}
         </div>
       ) : (
-        <div className="atm-panel-content">
-          <div className="atm-records">
-            {automations.filter(a => a.lastRunAt).length === 0 ? (
-              <div className="atm-panel-empty">
-                <ClockIcon size="xl" className="atm-panel-empty-icon" />
-                <p>暂无执行记录</p>
+        <div className="atm-toolbar" data-tauri-drag-region>
+          <div className="atm-toolbar-left">
+            {isBatchMode ? (
+              <div className="atm-batch-info">
+                <button
+                  type="button"
+                  className="atm-batch-action"
+                  onClick={() => {
+                    const allIds = [...scheduledAutomations, ...pausedAutomations].map((a) => a.id);
+                    setSelectedIds((prev) =>
+                      allIds.length > 0 && prev.size === allIds.length ? new Set() : new Set(allIds),
+                    );
+                  }}
+                >
+                  {selectedIds.size > 0 && selectedIds.size === scheduledAutomations.length + pausedAutomations.length
+                    ? "取消"
+                    : "全选"}
+                </button>
+                <button
+                  type="button"
+                  className="atm-batch-action atm-batch-delete"
+                  disabled={selectedIds.size === 0}
+                  onClick={handleBatchDelete}
+                >
+                  删除
+                </button>
+                <span className="atm-batch-count">
+                  已选择<span className="atm-batch-count-num">{selectedIds.size}</span>项
+                </span>
               </div>
             ) : (
-              <div className="atm-record-list">
-                {automations.filter(a => a.lastRunAt).map((a) => (
-                  <div key={a.id} className="atm-record-item">
-                    <div className="atm-record-dot" />
-                    <div className="atm-record-info">
-                      <span className="atm-record-name">{a.name}</span>
-                      <span className="atm-record-time">{formatTime(a.lastRunAt!)}</span>
-                    </div>
-                    <span className="atm-record-status">已完成</span>
+              <Segmented
+                className="atm-tabs"
+                value={activeTab}
+                onChange={(v) => setActiveTab(v as TabKey)}
+                options={[
+                  { value: "tasks", label: "定时任务" },
+                  { value: "records", label: "运行记录" },
+                ]}
+              />
+            )}
+          </div>
+          <div className="atm-toolbar-right">
+            {isBatchMode ? (
+              <button type="button" className="atm-toolbar-btn" onClick={handleToggleBatchMode}>
+                退出管理
+              </button>
+            ) : isToolbarRightHidden ? null : (
+              <>
+                {activeTab === "records" && (
+                  <div className="atm-filter-wrap" ref={filterRef}>
+                    <button
+                      type="button"
+                      className={`atm-filter-btn${filterStatus !== "all" ? " atm-filter-btn--active" : ""}`}
+                      onClick={() => setFilterOpen((v) => !v)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" style={{ color: "var(--wb-palette-black-70)" }}>
+                        <path d="M2 4h12M4.5 8h7M6.5 12h3" />
+                      </svg>
+                      {filterStatus !== "all" && <span className="atm-filter-dot" />}
+                    </button>
+                    {filterOpen && (
+                      <div className="atm-filter-menu atm-filter-menu--right">
+                        {RECORD_FILTERS.map((f) => (
+                          <button
+                            key={f.key}
+                            type="button"
+                            className={`atm-chip-option${filterStatus === f.key ? " active" : ""}`}
+                            onClick={() => {
+                              setFilterStatus(f.key);
+                              setFilterOpen(false);
+                            }}
+                          >
+                            <span className="atm-chip-option-check">{filterStatus === f.key && <CheckIcon size="sm" />}</span>
+                            <span>{f.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
+                )}
+                <div className="atm-search-input">
+                  <SearchIcon size="sm" className="atm-search-input-icon" />
+                  <input
+                    type="text"
+                    placeholder="搜索自动化/记录"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                {activeTab === "tasks" && (
+                  <>
+                    <button type="button" className="atm-toolbar-btn" onClick={handleToggleBatchMode}>
+                      <AtmBatchManageIcon />
+                      <span>批量管理</span>
+                    </button>
+                    {showTemplateEntryButton && (
+                      <button type="button" className="atm-toolbar-btn" onClick={() => setShowTemplatePage(true)}>
+                        <AtmAddFromTemplateIcon />
+                        <span>从模版添加</span>
+                      </button>
+                    )}
+                    <button type="button" className="atm-create-btn" onClick={() => handleCreate()}>
+                      <AddIcon />
+                      <span>添加自动化</span>
+                    </button>
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
       )}
 
-      {editing && (
-        <AutomationEditor initial={editing} onCancel={() => setEditing(null)} onSave={handleSave} />
+      {/* ---------- 内容 ---------- */}
+      {loading && !snapshot ? (
+        <div className="atm-panel-empty">加载中…</div>
+      ) : showTemplatePage ? (
+        <div className="atm-template-page">
+          <AutomationTemplateGrid templates={AUTOMATION_TEMPLATES} onSelectTemplate={handleCreate} />
+        </div>
+      ) : activeTab === "tasks" ? (
+        allTasksEmpty && showDefaultTemplateGrid ? (
+          /* 截图 1：空态 hero + 模板网格 */
+          <div className="atm-empty-state">
+            <div className="atm-empty-state-hero">
+              <div className="atm-empty-state-icon">
+                <AutomationEmptyAlarmIcon width={48} height={48} />
+              </div>
+              <div className="atm-empty-state-text">开启你的第一个自动化任务吧</div>
+              <div className="atm-empty-state-actions">
+                <button type="button" className="atm-empty-action-btn" onClick={() => handleCreate()}>
+                  + 添加自动化
+                </button>
+              </div>
+            </div>
+            <div className="atm-empty-state-templates">
+              <div className="atm-empty-state-templates-title">自动化任务模版</div>
+              <AutomationTemplateGrid templates={AUTOMATION_TEMPLATES} onSelectTemplate={handleCreate} />
+            </div>
+          </div>
+        ) : (
+          /* 任务列表：当前 / 已暂停 */
+          <div className="atm-task-list">
+            {filteredScheduled.length > 0 && <div className="atm-task-group-label">当前</div>}
+            {filteredScheduled.map((automation) => (
+              <AutomationRow
+                key={automation.id}
+                automation={automation}
+                isBatchMode={isBatchMode}
+                isSelected={selectedIds.has(automation.id)}
+                onEdit={handleEdit}
+                onRunTest={handleRunTest}
+                onTogglePause={handleTogglePause}
+                onDelete={handleRowDelete}
+                onToggleSelect={(id) =>
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  })
+                }
+              />
+            ))}
+            {filteredPaused.length > 0 && <div className="atm-task-group-label">已暂停</div>}
+            {filteredPaused.map((automation) => (
+              <AutomationRow
+                key={automation.id}
+                automation={automation}
+                isBatchMode={isBatchMode}
+                isSelected={selectedIds.has(automation.id)}
+                onEdit={handleEdit}
+                onRunTest={handleRunTest}
+                onTogglePause={handleTogglePause}
+                onDelete={handleRowDelete}
+                onToggleSelect={(id) =>
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  })
+                }
+              />
+            ))}
+            {(filteredScheduled.length === 0 && filteredPaused.length === 0) && (
+              <div className="atm-panel-empty">没有匹配的自动化</div>
+            )}
+          </div>
+        )
+      ) : allRecordsEmpty || filteredRecords.length === 0 ? (
+        /* 截图 3：运行记录空态 */
+        <div className="atm-empty-state atm-empty-state--records">
+          <div className="atm-empty-state-hero">
+            <div className="atm-empty-state-icon">
+              <AutomationEmptyRecordsIcon width={48} height={48} />
+            </div>
+            <div className="atm-empty-state-text">{allRecordsEmpty ? "暂无运行记录" : "没有匹配的记录"}</div>
+          </div>
+        </div>
+      ) : (
+        /* 运行记录列表 */
+        <div className="atm-records-list">
+          {groupedRecords.map((group) => {
+            const isCollapsed = collapsedGroups.has(group.label);
+            return (
+              <div className="atm-records-group" key={group.label}>
+                <div
+                  className="atm-records-group-label"
+                  onClick={() =>
+                    setCollapsedGroups((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(group.label)) next.delete(group.label);
+                      else next.add(group.label);
+                      return next;
+                    })
+                  }
+                >
+                  {group.label}
+                  <ChevronDownIcon
+                    width={14}
+                    height={14}
+                    className={`atm-records-group-chevron${isCollapsed ? " atm-records-group-chevron--collapsed" : ""}`}
+                  />
+                </div>
+                {!isCollapsed &&
+                  group.items.map((item) => (
+                    <InboxRow
+                      key={item.id}
+                      item={item}
+                      onArchive={handleArchiveRecord}
+                      onDelete={handleDeleteRecord}
+                    />
+                  ))}
+              </div>
+            );
+          })}
+          {archivedRecords.length > 0 && (
+            <div className="atm-records-group atm-records-group--archived">
+              <div className="atm-records-group-label" onClick={() => setArchivedGroupOpen((v) => !v)}>
+                已归档
+                <ChevronDownIcon
+                  width={14}
+                  height={14}
+                  className={`atm-records-group-chevron${archivedGroupOpen ? "" : " atm-records-group-chevron--collapsed"}`}
+                />
+              </div>
+              {archivedGroupOpen &&
+                archivedRecords.map((item) => (
+                  <InboxRow key={item.id} item={item} archived onArchive={handleArchiveRecord} onDelete={handleDeleteRecord} />
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          content={confirmState.content}
+          okText={confirmState.okText}
+          danger
+          onOk={() => {
+            const action = confirmState.action;
+            setConfirmState(null);
+            void action();
+          }}
+          onCancel={() => setConfirmState(null)}
+        />
       )}
     </div>
   );
 }
 
 // ============================================================
-// Automation Editor Dialog (对齐 WB 自动化创建/编辑弹窗)
+// AutomationRow — 任务行（复刻 WB AutomationRow）
 // ============================================================
 
-function AutomationEditor({
-  initial, onCancel, onSave,
+function AutomationRow({
+  automation,
+  isBatchMode,
+  isSelected,
+  onEdit,
+  onRunTest,
+  onTogglePause,
+  onDelete,
+  onToggleSelect,
 }: {
-  initial: Automation;
-  onCancel: () => void;
-  onSave: (a: Automation) => void;
+  automation: Automation;
+  isBatchMode: boolean;
+  isSelected: boolean;
+  onEdit: (a: Automation) => void;
+  onRunTest: (id: string) => void;
+  onTogglePause: (id: string, status: AutomationStatus) => void;
+  onDelete: (id: string) => void;
+  onToggleSelect: (id: string) => void;
 }) {
-  const [draft, setDraft] = useState<Automation>(initial);
-  const set = (patch: Partial<Automation>) => setDraft((d) => ({ ...d, ...patch }));
-  const setSchedule = (patch: Partial<Schedule>) =>
-    setDraft((d) => ({ ...d, schedule: { ...d.schedule, ...patch } as Schedule }));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const isActive = automation.status === "ACTIVE";
+  const scheduleDesc = describeSchedule(automation);
+  const validityDesc = describeValidity(automation);
+  const projectNames = automation.cwds
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .map((p) => p.split(/[\\/]/).filter(Boolean).pop() || p);
+  const nextLabel = startsInLabel(automation.nextRunAt);
 
-  const [triggerType, setTriggerType] = useState<TriggerType>(() => {
-    if (draft.schedule.type === "once") return "once";
-    return "schedule";
-  });
-
-  const submit = () => {
-    if (!draft.name.trim() || !draft.prompt.trim()) { alert("名称和提示词不能为空"); return; }
-    onSave(draft);
-  };
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   return (
-    <div className="modal-overlay atm-editor-overlay" onClick={onCancel}>
-      <div className="atm-editor" onClick={(e) => e.stopPropagation()}>
-        <div className="atm-editor-header">
-          <h3>{initial.id ? "编辑自动化" : "创建自动化"}</h3>
-          <button className="atm-editor-close" onClick={onCancel}>
-            <XCloseIcon size="md" />
-          </button>
+    <div
+      className={`atm-row${isBatchMode ? " atm-row--batch" : ""}${menuOpen ? " atm-row--menu-open" : ""}`}
+      onClick={() => (isBatchMode ? onToggleSelect(automation.id) : onEdit(automation))}
+    >
+      <div className="atm-row-left">
+        {isBatchMode && (
+          <span className="atm-row-leading">
+            <Checkbox className="atm-row-checkbox" checked={!!isSelected} />
+          </span>
+        )}
+        <div className="atm-row-content">
+          <div className="atm-row-main">
+            <span className="atm-row-name">{automation.name}</span>
+          </div>
+          <div className="atm-row-meta">
+            {projectNames.map((name) => (
+              <span className="atm-row-project" title={name} key={`${automation.id}-${name}`}>
+                {name}
+              </span>
+            ))}
+            {scheduleDesc && (
+              <span className="atm-row-schedule" title={scheduleDesc}>
+                {scheduleDesc}
+              </span>
+            )}
+            {validityDesc && (
+              <span className="atm-row-validity" title={validityDesc}>
+                {validityDesc}
+              </span>
+            )}
+          </div>
         </div>
-
-        <div className="atm-editor-body">
-          {/* Name */}
-          <div className="atm-editor-field">
-            <label className="atm-editor-label">任务名称</label>
-            <input type="text" className="atm-editor-input" value={draft.name}
-              onChange={(e) => set({ name: e.target.value })} placeholder="例如：每日代码审查" />
-          </div>
-
-          {/* Prompt */}
-          <div className="atm-editor-field">
-            <label className="atm-editor-label">提示词</label>
-            <textarea className="atm-editor-textarea" value={draft.prompt}
-              onChange={(e) => set({ prompt: e.target.value })} rows={4}
-              placeholder="到点时自动发送给 AI 的指令" />
-          </div>
-
-          {/* Trigger Type */}
-          <div className="atm-editor-field">
-            <label className="atm-editor-label">触发方式</label>
-            <div className="atm-editor-trigger-types">
-              {([
-                { value: "schedule", label: "定时" },
-                { value: "once", label: "单次" },
-              ] as { value: TriggerType; label: string }[]).map((opt) => (
-                <button key={opt.value}
-                  className={`atm-editor-trigger-btn${triggerType === opt.value ? " atm-editor-trigger-btn--active" : ""}`}
-                  onClick={() => {
-                    setTriggerType(opt.value);
-                    if (opt.value === "once") {
-                      setSchedule({ type: "once", at: new Date(Date.now() + 3600_000).toISOString() } as Schedule);
-                    } else {
-                      setSchedule({ type: "daily", time: "09:00" } as Schedule);
-                    }
-                  }}>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Schedule details */}
-          {triggerType === "schedule" && (
-            <div className="atm-editor-schedule-row">
-              <div className="atm-editor-field">
-                <label className="atm-editor-label">频率</label>
-                <select className="atm-editor-select" value={draft.schedule.type === "weekly" ? "weekly_monday" : draft.schedule.type === "monthly" ? "monthly_1st" : draft.schedule.type}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "daily") setSchedule({ type: "daily", time: "09:00" } as Schedule);
-                    else if (v === "workday") setSchedule({ type: "weekly", weekdays: [1, 2, 3, 4, 5], time: "09:00" } as Schedule);
-                    else if (v === "weekly_monday") setSchedule({ type: "weekly", weekdays: [1], time: "09:00" } as Schedule);
-                    else if (v === "monthly_1st") setSchedule({ type: "monthly", day: 1, time: "09:00" } as Schedule);
-                  }}>
-                  {FREQUENCY_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="atm-editor-field">
-                <label className="atm-editor-label">时间</label>
-                <input type="time" className="atm-editor-input"
-                  value={"time" in draft.schedule ? draft.schedule.time : "09:00"}
-                  onChange={(e) => setSchedule({ time: e.target.value } as Schedule)} />
-              </div>
-            </div>
+      </div>
+      <div className="atm-row-right">
+        <span className="atm-row-right-text">
+          {isActive && nextLabel ? (
+            <span className="atm-row-next">{nextLabel}</span>
+          ) : !isActive ? (
+            <span className="atm-row-paused-label">已暂停</span>
+          ) : (
+            <span className="atm-row-paused-label">暂无后续执行</span>
           )}
-
-          {triggerType === "once" && (
-            <div className="atm-editor-field">
-              <label className="atm-editor-label">触发时间</label>
-              <input type="datetime-local" className="atm-editor-input"
-                value={toLocalInput(("at" in draft.schedule ? draft.schedule.at : "") || "")}
-                onChange={(e) => setSchedule({ at: fromLocalInput(e.target.value) } as Schedule)} />
+        </span>
+        {!isBatchMode && (
+          <div className="atm-row-hover-actions">
+            <button
+              type="button"
+              className="atm-row-action-btn"
+              title="测试运行"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRunTest(automation.id);
+              }}
+            >
+              <PlayIcon width={16} height={16} />
+            </button>
+            <div className="atm-row-menu-wrap" ref={menuRef}>
+              <span
+                className="atm-row-more-hint"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen((v) => !v);
+                }}
+              >
+                <MoreDotsIcon width={16} height={16} />
+              </span>
+              {menuOpen && (
+                <div className="atm-row-menu" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className="atm-row-menu-item"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onTogglePause(automation.id, automation.status);
+                    }}
+                  >
+                    {isActive ? <CirclePauseIcon width={14} height={14} /> : <ResumeCircleIcon width={14} height={14} />}
+                    <span>{isActive ? "暂停" : "恢复"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="atm-row-menu-item atm-row-menu-item--danger"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDelete(automation.id);
+                    }}
+                  >
+                    <DeleteIcon width={14} height={14} />
+                    <span>删除</span>
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-
-        <div className="atm-editor-footer">
-          <button className="btn btn--ghost" onClick={onCancel}>取消</button>
-          <button className="btn btn--primary" onClick={submit}>
-            {initial.id ? "保存" : "创建"}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ============================================================
-// Helpers
+// InboxRow — 运行记录行（复刻 WB InboxRow）
 // ============================================================
 
-function describeSchedule(s: Schedule): string {
-  const wdNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  switch (s.type) {
-    case "once": return `单次 · ${formatTime(s.at)}`;
-    case "daily": return `每天 ${s.time}`;
-    case "weekly": {
-      if (arraysEqual(s.weekdays, [1, 2, 3, 4, 5])) return `工作日 ${s.time}`;
-      return `每${s.weekdays.map((d) => wdNames[d]).join("/")} ${s.time}`;
-    }
-    case "monthly": return `每月 ${s.day} 日 ${s.time}`;
-  }
-}
+function InboxRow({
+  item,
+  archived = false,
+  onArchive,
+  onDelete,
+}: {
+  item: AutomationRunRecord;
+  archived?: boolean;
+  onArchive: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const isRunning = item.status === "running";
+  const date = new Date(item.finishedAt || item.startedAt);
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const dateTime = `${formatRunTime(item.finishedAt || item.startedAt)}`;
 
-function arraysEqual(a: number[], b: number[]) {
-  return a.length === b.length && a.every((v, i) => v === b[i]);
-}
-
-function formatTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-  } catch { return iso; }
-}
-
-function toLocalInput(iso: string): string {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  } catch { return ""; }
-}
-
-function fromLocalInput(local: string): string {
-  if (!local) return new Date().toISOString();
-  return new Date(local).toISOString();
+  return (
+    <div className={`atm-row atm-inbox-row${archived ? " atm-archived" : ""}${isRunning ? " atm-inbox-row--running" : ""}`}>
+      <div className="atm-row-left">
+        <div className="atm-row-content">
+          <div className="atm-row-main atm-row-main-inbox">
+            <span className="atm-row-name">{item.automationName}</span>
+          </div>
+          <span className="atm-row-result-label" title={recordStatusLabel(item)}>
+            {recordStatusLabel(item)}
+          </span>
+        </div>
+      </div>
+      <div className="atm-row-right">
+        <span className="atm-row-right-text">
+          <span className="atm-row-time">{archived ? dateTime : time}</span>
+          {archived ? (
+            <ArchiveIcon size={16} color="var(--wb-color-text-disabled, #000)" />
+          ) : (
+            <RecordStatusIcon item={item} />
+          )}
+        </span>
+        {!isRunning && (
+          <div className="atm-row-hover-actions">
+            {!archived && (
+              <button
+                type="button"
+                className="atm-row-archive-btn"
+                title="归档"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onArchive(item.id);
+                }}
+              >
+                <ArchiveIcon width={14} height={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="atm-row-delete-btn"
+              title="删除"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(item.id);
+              }}
+            >
+              <DeleteIcon width={14} height={14} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

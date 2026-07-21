@@ -230,6 +230,7 @@ async fn handle_client_message(app: &AppHandle, msg: AcpClientMessage, perms: &P
                 // `SessionSummaryGenerated` after the first user prompt (the
                 // LLM-generated title). The update is a tagged enum with the
                 // wire field name `sessionUpdate` (see notification.rs:359).
+                tracing::info!(method, "received ext notification, dispatching to handle_session_notification");
                 handle_session_notification(app, &params);
             } else if method == "x.ai/mcp/server_status" || method == "x.ai/mcp/init_progress" {
                 // MCP connector status / startup progress — surface to the
@@ -288,15 +289,18 @@ async fn handle_client_message(app: &AppHandle, msg: AcpClientMessage, perms: &P
 /// ```
 fn handle_session_notification(app: &AppHandle, params: &Value) {
     let Some(session_id) = params.get("sessionId").and_then(|v| v.as_str()) else {
+        tracing::debug!("session_notification: missing sessionId, ignoring");
         return;
     };
     let Some(update) = params.get("update") else {
+        tracing::debug!(session_id, "session_notification: missing update field");
         return;
     };
     let kind = update
         .get("sessionUpdate")
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    tracing::info!(session_id, kind, "received x.ai/session_notification");
     if kind == "session_summary_generated" {
         // Accept the camelCase variant too, defensively — reading only
         // `sessionSummary` silently drops every generated title (the event
@@ -307,6 +311,7 @@ fn handle_session_notification(app: &AppHandle, params: &Value) {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if !title.is_empty() {
+            tracing::info!(session_id, title, "emitting grok://summary");
             let _ = app.emit(
                 "grok://summary",
                 SummaryEvent {
@@ -314,6 +319,8 @@ fn handle_session_notification(app: &AppHandle, params: &Value) {
                     title: title.to_string(),
                 },
             );
+        } else {
+            tracing::warn!(session_id, "session_summary_generated but title is empty");
         }
     }
 }

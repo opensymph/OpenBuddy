@@ -8,6 +8,7 @@ mod agents_store;
 mod automations;
 mod bridge;
 mod commands;
+mod experts;
 mod ext;
 mod grok;
 mod grok_admin;
@@ -70,12 +71,21 @@ pub fn run() {
             mcp::mcp_upsert,
             mcp::mcp_delete,
             mcp::mcp_toggle,
+            mcp::mcp_config_path,
+            mcp::mcp_config_read,
+            mcp::mcp_config_save,
             // experts / assistants (~/.grok/agents/*.md)
             agents_store::agents_list,
             agents_store::agents_get,
             agents_store::agents_save,
             agents_store::agents_delete,
             agents_store::agents_template,
+            // expert marketplace (live from a local WorkBuddy data dir)
+            experts::experts_default_root,
+            experts::experts_list_roots,
+            experts::experts_load,
+            experts::experts_thumbnail,
+            experts::experts_image_bytes,
             // grok admin: memory / search / rewind / commands / plan / tasks / reload
             grok_admin::memory_list,
             grok_admin::memory_get,
@@ -113,11 +123,13 @@ pub fn run() {
             notifications::notification_mark_all_read,
             notifications::notification_clear,
             // automations (local scheduler)
-            automations::automations_list,
+            automations::automations_snapshot,
             automations::automations_save,
             automations::automations_delete,
-            automations::automations_toggle,
+            automations::automations_set_status,
             automations::automations_run,
+            automations::automation_records_archive,
+            automations::automation_records_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenBuddy");

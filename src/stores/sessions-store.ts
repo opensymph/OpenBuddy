@@ -167,6 +167,9 @@ export const useSessionsStore = create<SessionsState>((set) => ({
           title: "未命名会话",
           cwd: state.homeCwd,
           ...s,
+          // Fresh sessions must carry a timestamp so the sidebar's
+          // recently-active sort pins them to the top instead of sinking.
+          updatedAt: s.updatedAt ?? new Date().toISOString(),
         };
         return { independent: [inserted, ...state.independent] };
       }
@@ -175,7 +178,12 @@ export const useSessionsStore = create<SessionsState>((set) => ({
       // cache is loaded (expanded); otherwise the node's sessionCount carries
       // the truth until the user expands it (or a refresh repopulates it).
       if (Object.prototype.hasOwnProperty.call(state.workspaceSessions, cwd)) {
-        const inserted: SessionSummary = { title: "未命名会话", cwd, ...s };
+        const inserted: SessionSummary = {
+          title: "未命名会话",
+          cwd,
+          ...s,
+          updatedAt: s.updatedAt ?? new Date().toISOString(),
+        };
         return {
           workspaceSessions: {
             ...state.workspaceSessions,

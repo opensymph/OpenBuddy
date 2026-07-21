@@ -416,6 +416,22 @@ pub fn providers_save(
         models.insert(p.model_id.clone(), rendered);
     }
 
+    // Auto-sync [models] session_summary with default when unset.
+    // In BYOK setups the compiled-in title-generation model (grok-4.5) is
+    // unreachable; mirroring the user's default model makes LLM-generated
+    // session titles work out of the box.
+    if let Some(models_table) = config.get_mut("models").and_then(Value::as_table_mut) {
+        let has_summary = models_table.contains_key("session_summary");
+        if !has_summary {
+            if let Some(default) = models_table.get("default").and_then(Value::as_str) {
+                models_table.insert(
+                    "session_summary".into(),
+                    Value::String(default.to_owned()),
+                );
+            }
+        }
+    }
+
     write_config(&config)
 }
 

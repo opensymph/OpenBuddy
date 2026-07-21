@@ -25,6 +25,7 @@ import {
   providersList,
   providersSave,
   providersDelete,
+  internalReload,
   type ApiBackend,
   type AuthScheme,
   type ProviderConfig,
@@ -162,9 +163,13 @@ const PRESETS: Record<ProviderKind, Preset> = {
 export function SettingsPanel({
   open,
   onClose,
+  onModelsChanged,
 }: {
   open: boolean;
   onClose: () => void;
+  /** Called after a provider is saved/deleted so the app can refresh its
+   *  model picker without a restart. */
+  onModelsChanged?: () => void;
 }) {
   const [active, setActive] = useState<SectionId>("model");
 
@@ -232,7 +237,7 @@ export function SettingsPanel({
           </button>
           <div className="settings-modal__panel">
             {active === "model" ? (
-              <ModelsSettingsPanel />
+              <ModelsSettingsPanel onModelsChanged={onModelsChanged} />
             ) : active === "personalize" ? (
               <PersonalizeSettingsPanel />
             ) : active === "shortcuts" ? (
@@ -282,7 +287,7 @@ function PlaceholderSection({ label }: { label: string }) {
 // 模型 section: list configured providers + open the add/edit editor.
 // ---------------------------------------------------------------------------
 
-function ModelsSettingsPanel() {
+function ModelsSettingsPanel({ onModelsChanged }: { onModelsChanged?: () => void }) {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -314,12 +319,14 @@ function ModelsSettingsPanel() {
         await providersDelete(original.modelId);
       }
       await providersSave([draft]);
+      // Hot-reload grok's model catalog so the new provider is usable
+      // immediately (no restart needed). The grok://models-update event
+      // also triggers a refresh in App.tsx as a safety net.
+      await internalReload("models").catch(() => {});
+      onModelsChanged?.();
       setEditing(null);
       await reload();
-      setMsg({
-        kind: "ok",
-        text: "已保存。重启 OpenBuddy 后新配置生效（关闭窗口再重新打开即可）。",
-      });
+      setMsg({ kind: "ok", text: "已保存，模型列表已刷新。" });
     } catch (e) {
       setMsg({ kind: "err", text: `保存失败：${String(e)}` });
     }
@@ -330,8 +337,10 @@ function ModelsSettingsPanel() {
     setMsg(null);
     try {
       await providersDelete(p.modelId);
+      await internalReload("models").catch(() => {});
+      onModelsChanged?.();
       await reload();
-      setMsg({ kind: "ok", text: "已删除。重启后生效。" });
+      setMsg({ kind: "ok", text: "已删除，模型列表已刷新。" });
     } catch (e) {
       setMsg({ kind: "err", text: `删除失败：${String(e)}` });
     }

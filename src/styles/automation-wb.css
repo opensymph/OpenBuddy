@@ -1,0 +1,1893 @@
+/* =====================================================================
+ * Automation Panel (自动化) — WorkBuddy 1:1
+ * 复刻自 automation-panel-Dw-U_iZd.css；颜色全部走 --atm-* 令牌，
+ * [data-theme="dark"] 下整组反色。下拉定位为 inline fixed（portal），
+ * 此处仅保留视觉样式。
+ * ===================================================================== */
+
+.automation-panel,
+.code-buddy-automation,
+.atm-floating-layer,
+.atm-modal-scope {
+  --atm-surface: #FFFFFF;
+  --atm-surface-muted: #F7F7F7;
+  --atm-surface-subtle: #F5F5F5;
+  --atm-surface-soft: #FAFAFA;
+  --atm-surface-hover: #F8F8F8;
+  --atm-surface-active: #F2F3F5;
+  --atm-surface-active-hover: #F7F8FA;
+  --atm-template-card-bg: #FCFCFC;
+  --atm-template-card-bg-hover: #F5F5F5;
+  --atm-template-card-add-bg: #F2F2F2;
+  --atm-template-card-add-bg-hover: #EBEBEB;
+  --atm-tab-active-bg: #FFFFFF;
+  --atm-tab-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --atm-switch-thumb: #FFFFFF;
+  --atm-switch-thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --atm-toolbar-pill-bg: #F2F2F2;
+  --atm-toolbar-pill-bg-hover: #EBEBEB;
+  --atm-modal-bg: #FFFFFF;
+  --atm-popover-bg: #FFFFFF;
+  --atm-border: #E5E5E5;
+  --atm-border-secondary: #E5E6EB;
+  --atm-modal-border: transparent;
+  --atm-border-soft: #ECECEC;
+  --atm-border-softest: #EFEFEF;
+  --atm-border-hover: #D8D8D8;
+  --atm-border-focus: #999999;
+  --atm-border-selected: #C9CDD4;
+  --atm-text-primary: #222222;
+  --atm-text-secondary: #666666;
+  --atm-text-tertiary: #888888;
+  --atm-text-muted: #999999;
+  --atm-text-subtle: #777777;
+  --atm-text-strong: #444444;
+  --atm-text-placeholder: #A0A0A0;
+  --atm-pause-icon: #8A8A8A;
+  --atm-success-dot: #6FC78B;
+  --atm-pending-dot: #8D8D8D;
+  --atm-failed-dot: #EF4444;
+  --atm-chip-bg: #F7F7F7;
+  --atm-chip-soft-bg: #F5F5F5;
+  --atm-chip-border: #ECECEC;
+  --atm-result-success-text: #16A83E;
+  --atm-result-neutral-text: #B4690E;
+  --atm-result-failed-bg: rgba(239, 68, 68, 0.08);
+  --atm-result-failed-border: #EF4444;
+  --atm-result-failed-text: #EF4444;
+  --atm-overlay-bg: rgba(0, 0, 0, 0.45);
+  --atm-modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --atm-primary-btn-bg: #111111;
+  --atm-primary-btn-border: #111111;
+  --atm-primary-btn-hover-bg: #000000;
+  --atm-primary-btn-hover-border: #000000;
+  --atm-primary-btn-text: #FFFFFF;
+  --atm-secondary-btn-bg: #FFFFFF;
+  --atm-secondary-btn-border: #E0E0E0;
+  --atm-secondary-btn-hover-bg: #F8F8F8;
+  --atm-secondary-btn-text: #333333;
+  --atm-chat-placeholder: #A0A0A0;
+  --atm-calendar-selected-bg: #111111;
+  --atm-calendar-selected-text: #FFFFFF;
+  --atm-calendar-range-bg: rgba(17, 17, 17, 0.08);
+  --atm-calendar-range-hover-bg: rgba(17, 17, 17, 0.12);
+  --atm-calendar-range-text: #333333;
+}
+
+[data-theme="dark"] .automation-panel,
+[data-theme="dark"] .code-buddy-automation,
+[data-theme="dark"] .atm-floating-layer,
+[data-theme="dark"] .atm-modal-scope {
+  --atm-surface: #1D1D1F;
+  --atm-surface-muted: rgba(255, 255, 255, 0.02);
+  --atm-surface-subtle: rgba(255, 255, 255, 0.04);
+  --atm-surface-soft: rgba(255, 255, 255, 0.03);
+  --atm-surface-hover: rgba(255, 255, 255, 0.05);
+  --atm-surface-active: #3A3A3D;
+  --atm-surface-active-hover: #404045;
+  --atm-template-card-bg: rgba(255, 255, 255, 0.04);
+  --atm-template-card-bg-hover: rgba(255, 255, 255, 0.07);
+  --atm-template-card-add-bg: rgba(255, 255, 255, 0.1);
+  --atm-template-card-add-bg-hover: rgba(255, 255, 255, 0.14);
+  --atm-tab-active-bg: rgba(255, 255, 255, 0.1);
+  --atm-tab-active-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --atm-switch-thumb: #FFFFFF;
+  --atm-switch-thumb-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  --atm-toolbar-pill-bg: rgba(255, 255, 255, 0.1);
+  --atm-toolbar-pill-bg-hover: rgba(255, 255, 255, 0.14);
+  --atm-modal-bg: #2B2B2D;
+  --atm-popover-bg: #303033;
+  --atm-border: rgba(255, 255, 255, 0.1);
+  --atm-border-secondary: rgba(255, 255, 255, 0.1);
+  --atm-modal-border: rgba(255, 255, 255, 0.08);
+  --atm-border-soft: rgba(255, 255, 255, 0.08);
+  --atm-border-softest: rgba(255, 255, 255, 0.06);
+  --atm-border-hover: rgba(255, 255, 255, 0.18);
+  --atm-border-focus: rgba(255, 255, 255, 0.24);
+  --atm-border-selected: rgba(255, 255, 255, 0.2);
+  --atm-text-primary: rgba(255, 255, 255, 0.92);
+  --atm-text-secondary: rgba(255, 255, 255, 0.72);
+  --atm-text-tertiary: rgba(255, 255, 255, 0.56);
+  --atm-text-muted: rgba(255, 255, 255, 0.44);
+  --atm-text-subtle: rgba(255, 255, 255, 0.64);
+  --atm-text-strong: rgba(255, 255, 255, 0.96);
+  --atm-text-placeholder: rgba(255, 255, 255, 0.34);
+  --atm-pause-icon: rgba(255, 255, 255, 0.52);
+  --atm-success-dot: #73C991;
+  --atm-pending-dot: rgba(255, 255, 255, 0.42);
+  --atm-failed-dot: #EF4444;
+  --atm-chip-bg: #343437;
+  --atm-chip-soft-bg: #3A3A3D;
+  --atm-chip-border: rgba(255, 255, 255, 0.08);
+  --atm-result-success-text: #16A83E;
+  --atm-result-neutral-text: #D89A3D;
+  --atm-result-failed-bg: rgba(239, 68, 68, 0.1);
+  --atm-result-failed-border: #EF4444;
+  --atm-result-failed-text: #EF4444;
+  --atm-overlay-bg: rgba(0, 0, 0, 0.58);
+  --atm-modal-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  --atm-primary-btn-bg: #FFFFFF;
+  --atm-primary-btn-border: #FFFFFF;
+  --atm-primary-btn-hover-bg: #F2F2F2;
+  --atm-primary-btn-hover-border: #F2F2F2;
+  --atm-primary-btn-text: #111111;
+  --atm-secondary-btn-bg: transparent;
+  --atm-secondary-btn-border: rgba(255, 255, 255, 0.1);
+  --atm-secondary-btn-hover-bg: rgba(255, 255, 255, 0.05);
+  --atm-secondary-btn-text: rgba(255, 255, 255, 0.88);
+  --atm-chat-placeholder: rgba(255, 255, 255, 0.34);
+  --atm-calendar-selected-bg: #3A3A3D;
+  --atm-calendar-selected-text: rgba(255, 255, 255, 0.92);
+  --atm-calendar-range-bg: rgba(255, 255, 255, 0.06);
+  --atm-calendar-range-hover-bg: rgba(255, 255, 255, 0.09);
+  --atm-calendar-range-text: rgba(255, 255, 255, 0.92);
+}
+
+.automation-panel {
+  padding: 0 0 16px;
+  color: var(--atm-text-primary);
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+}
+.atm-floating-layer {
+  padding: 0;
+  color: var(--atm-text-primary);
+  overflow: visible;
+  height: auto;
+  position: static;
+}
+.automation-panel::-webkit-scrollbar { width: 6px; }
+.automation-panel::-webkit-scrollbar-track { background: transparent; }
+.automation-panel::-webkit-scrollbar-thumb { background-color: transparent; }
+.automation-panel:hover::-webkit-scrollbar-thumb { background-color: rgba(0, 0, 0, 0.16); }
+[data-theme="dark"] .automation-panel:hover::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.16); }
+
+/* ---------- 顶部 CTA / 工具栏按钮 ---------- */
+.atm-create-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  background: var(--atm-primary-btn-bg);
+  color: var(--atm-primary-btn-text);
+  border-radius: 8px;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+.atm-create-btn svg { flex-shrink: 0; }
+.atm-create-btn:hover:not(:disabled) { background: var(--atm-primary-btn-hover-bg); }
+.atm-create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.atm-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  box-sizing: border-box;
+  padding: 0 20px 0 24px;
+  gap: 12px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  -webkit-app-region: drag;
+}
+.atm-toolbar > * { -webkit-app-region: no-drag; }
+.atm-toolbar-left { display: flex; align-items: center; gap: 4px; }
+.atm-toolbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 1; min-width: 0; }
+
+/* ---------- Segmented（定时任务/运行记录、周期/按间隔/单次） ---------- */
+.atm-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  height: 34px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--wb-palette-gray-3);
+  flex-shrink: 0;
+}
+[data-theme="dark"] .atm-segmented { background: var(--atm-surface-subtle); }
+.atm-segmented-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--atm-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.atm-segmented-item:hover:not(.atm-segmented-item--active) { color: var(--atm-text-primary); }
+.atm-segmented-item--active {
+  background: var(--atm-tab-active-bg);
+  box-shadow: var(--atm-tab-active-shadow);
+  color: var(--atm-text-primary);
+  font-weight: 500;
+}
+.atm-schedule-tabs { align-self: flex-start; margin-bottom: 8px; }
+
+/* ---------- 搜索 / 筛选 / 批量 ---------- */
+.atm-search-input {
+  position: relative;
+  width: 200px;
+  flex-shrink: 1;
+  min-width: 80px;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--atm-toolbar-pill-bg);
+  transition: background 0.15s;
+}
+.atm-search-input:hover,
+.atm-search-input:focus-within { background: var(--atm-toolbar-pill-bg-hover); }
+.atm-search-input-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--atm-text-muted);
+  pointer-events: none;
+  display: inline-flex;
+}
+.atm-search-input input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0 10px 0 30px;
+  font-size: 13px;
+  color: var(--atm-text-primary);
+  box-sizing: border-box;
+}
+.atm-search-input input::placeholder { color: var(--atm-text-placeholder); }
+
+.atm-toolbar-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: none;
+  background: var(--atm-toolbar-pill-bg);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.atm-toolbar-btn:hover:not(:disabled) { background: var(--atm-toolbar-pill-bg-hover); }
+.atm-toolbar-btn svg { flex-shrink: 0; }
+
+.atm-filter-wrap { position: relative; }
+.atm-filter-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 71px;
+  border: none;
+  background: transparent;
+  color: var(--atm-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.atm-filter-btn:hover { background: var(--atm-surface-muted); }
+.atm-filter-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #F64040;
+}
+.atm-filter-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 160px;
+  background: var(--atm-popover-bg);
+  border: 1px solid var(--atm-border);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.04), 0 3px 6px -8px rgba(0, 0, 0, 0.04);
+  padding: 8px;
+  z-index: 100;
+  box-sizing: border-box;
+}
+
+.atm-batch-info { display: flex; align-items: center; gap: 12px; }
+.atm-batch-count { font-size: 14px; color: var(--atm-text-strong); font-weight: 400; }
+.atm-batch-count-num { margin: 0 2px; }
+.atm-batch-action {
+  padding: 7px 12px;
+  border: none;
+  background: var(--atm-surface-muted);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  border-radius: 71px;
+  transition: background 0.15s;
+}
+.atm-batch-action:hover { background: var(--atm-surface-hover); }
+.atm-batch-action.atm-batch-delete { background: var(--wb-status-error); color: var(--wb-text-on-primary, #fff); }
+.atm-batch-action.atm-batch-delete:hover:not(:disabled) { background: var(--wb-status-error); filter: brightness(0.92); }
+.atm-batch-action.atm-batch-delete:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---------- 空状态（截图 1 / 3） ---------- */
+.atm-empty-state {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 0 24px 20px;
+  justify-content: space-between;
+  gap: 24px;
+}
+.atm-empty-state--records { justify-content: center; gap: 0; }
+.atm-empty-state-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 200px;
+  padding: 24px 24px 0;
+}
+.atm-empty-state-icon { color: var(--atm-text-tertiary); }
+.atm-empty-state-text {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--atm-text-secondary);
+  text-align: center;
+}
+.atm-empty-state-actions { display: flex; justify-content: center; gap: 12px; margin-top: 8px; }
+.atm-empty-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--wb-palette-gray-3);
+  color: var(--atm-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+[data-theme="dark"] .atm-empty-action-btn { background: var(--atm-toolbar-pill-bg); }
+.atm-empty-action-btn:hover:not(:disabled) { background: var(--wb-palette-gray-4); }
+[data-theme="dark"] .atm-empty-action-btn:hover:not(:disabled) { background: var(--atm-toolbar-pill-bg-hover); }
+.atm-empty-state-templates { width: 100%; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
+.atm-empty-state-templates .atm-template-section { margin: 0; }
+.atm-empty-state-templates-title {
+  color: var(--atm-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.atm-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
+  color: var(--atm-text-muted);
+  font-size: 13px;
+}
+
+/* ---------- 模板网格（compact 变体，截图 1） ---------- */
+.atm-template-section { margin: 8px 0 40px; }
+.atm-template-page {
+  margin-top: 4px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 24px 20px;
+}
+.atm-section-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--atm-text-secondary);
+  padding: 16px 0 8px;
+}
+.atm-template-list--compact {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1100px) {
+  .atm-template-list--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .atm-template-list--compact { grid-template-columns: minmax(0, 1fr); }
+}
+.atm-template-card--compact {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: none;
+  border-radius: 16px;
+  background: var(--atm-surface);
+  box-shadow: 0 16px 32px -8px rgba(0, 0, 0, 0.03);
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  text-align: left;
+}
+.atm-template-card--compact:hover {
+  background: var(--atm-surface-hover);
+  box-shadow: 0 16px 32px -8px rgba(0, 0, 0, 0.08);
+}
+.atm-template-compact-avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--atm-text-primary);
+}
+.atm-template-compact-icon { width: 20px; height: 20px; }
+.atm-template-compact-texts { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.atm-template-compact-title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  color: var(--atm-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.atm-template-compact-desc {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--atm-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 任务列表（当前 / 已暂停） ---------- */
+.atm-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 20px;
+}
+.atm-task-group-label {
+  flex-shrink: 0;
+  height: 26px;
+  display: flex;
+  padding: 4px 8px;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 8px;
+  margin-bottom: 2px;
+  color: var(--wb-color-text-disabled, rgba(0, 0, 0, 0.3));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.atm-task-group-label:not(:first-child) { margin-top: 10px; }
+
+.atm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  padding: 8px;
+  flex-shrink: 0;
+  height: 36px;
+  min-height: 36px;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  gap: 64px;
+  position: relative;
+}
+.atm-row:hover { background: var(--wb-palette-gray-3); border-radius: 8px; }
+[data-theme="dark"] .atm-row:hover { background: rgba(255, 255, 255, 0.03); }
+.atm-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.atm-row-leading {
+  width: 16px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--atm-text-muted);
+}
+.atm-row-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  flex-direction: row;
+  gap: 8px;
+  overflow: hidden;
+}
+.atm-row-main { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; max-width: 28%; }
+.atm-row-main-inbox { max-width: 50%; }
+.atm-row-meta {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+.atm-row-right {
+  flex-shrink: 0;
+  font-size: 14px;
+  color: var(--atm-text-muted);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: 24px;
+}
+.atm-row-name {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  color: var(--atm-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.atm-row-project,
+.atm-row-schedule,
+.atm-row-validity {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--wb-color-text-disabled);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.atm-row-project { max-width: 28%; }
+.atm-row-schedule { max-width: 42%; }
+.atm-row-validity { max-width: 30%; }
+.atm-row-next,
+.atm-row-paused-label {
+  color: var(--wb-color-text-disabled, rgba(0, 0, 0, 0.3));
+  font-size: 14px;
+  line-height: 22px;
+}
+.atm-row-time { font-size: 14px; line-height: 22px; color: var(--wb-color-text-disabled); }
+.atm-row-result-label {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--wb-color-text-disabled);
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atm-task-status-icon { flex-shrink: 0; }
+.atm-task-status-icon--scheduled { color: var(--atm-text-muted); }
+
+@keyframes atm-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.atm-status-icon-spinning { animation: atm-spin 1.2s linear infinite; display: inline-flex; align-items: center; }
+
+.atm-row-right-text { display: inline-flex; align-items: center; gap: 8px; }
+.atm-row-hover-actions { display: none; align-items: center; gap: 12px; }
+.atm-row:hover .atm-row-hover-actions,
+.atm-row--menu-open .atm-row-hover-actions { display: flex; }
+.atm-row:hover .atm-row-right-text,
+.atm-row--menu-open .atm-row-right-text { display: none; }
+.atm-row-action-btn,
+.atm-row-archive-btn,
+.atm-row-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--wb-color-text-secondary);
+  cursor: pointer;
+}
+.atm-row-action-btn:hover:not(:disabled),
+.atm-row-archive-btn:hover:not(:disabled),
+.atm-row-delete-btn:hover:not(:disabled) { background: transparent; color: var(--wb-color-text-primary); }
+.atm-row-archive-btn svg path { opacity: 1; }
+.atm-row-menu-wrap { position: relative; display: inline-flex; }
+.atm-row-more-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--wb-color-text-secondary);
+  cursor: pointer;
+}
+.atm-row-more-hint:hover { color: var(--wb-color-text-primary); }
+.atm-row-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 128px;
+  background: var(--atm-popover-bg);
+  border: 1px solid var(--atm-border);
+  border-radius: 8px;
+  box-shadow: var(--atm-modal-shadow);
+  padding: 4px;
+  z-index: 100;
+}
+.atm-row-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+}
+.atm-row-menu-item:hover { background: var(--atm-surface-hover); }
+.atm-row-menu-item--danger { color: var(--atm-result-failed-text); }
+
+/* ---------- 运行记录列表（截图 3） ---------- */
+.atm-records-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 20px;
+  margin-top: 8px;
+}
+.atm-records-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+.atm-records-group-label {
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--wb-color-text-disabled, rgba(0, 0, 0, 0.3));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+.atm-records-group-chevron { flex-shrink: 0; transition: transform 0.15s; }
+.atm-records-group-chevron--collapsed { transform: rotate(-90deg); }
+.atm-inbox-row:hover .atm-row-right-text { display: none; }
+.atm-inbox-row:hover .atm-row-hover-actions { display: flex; }
+.atm-archived { opacity: 1; }
+
+/* ---------- 详情页（截图 2：添加 / 编辑自动化任务） ---------- */
+.atm-detail-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--wb-bg-primary);
+}
+.atm-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  gap: 6px;
+  height: 56px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  -webkit-app-region: drag;
+}
+.atm-detail-header button,
+.atm-detail-header a,
+.atm-detail-header input { -webkit-app-region: no-drag; }
+.atm-detail-header-left { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1; }
+.atm-detail-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.atm-detail-status-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--wb-color-text-primary);
+}
+.atm-detail-breadcrumb-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 28px;
+  color: var(--atm-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.atm-detail-breadcrumb-link:hover { color: var(--atm-text-primary); }
+.atm-detail-breadcrumb-sep { color: var(--atm-text-muted); font-size: 16px; line-height: 28px; }
+.atm-detail-breadcrumb-current {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 28px;
+  color: var(--atm-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.atm-detail-header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.atm-detail-icon-actions { display: flex; align-items: center; gap: 6px; }
+.atm-detail-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--wb-color-text-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+}
+.atm-detail-icon-btn:hover:not(:disabled) { background: transparent; color: var(--wb-color-text-primary); }
+.atm-detail-icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.atm-detail-btn-actions { display: flex; align-items: center; gap: 12px; }
+.atm-detail-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.atm-detail-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.atm-detail-btn--secondary { background: var(--atm-surface-muted); color: var(--atm-text-primary); }
+.atm-detail-btn--secondary:hover:not(:disabled) { background: var(--atm-surface-hover); }
+.atm-detail-btn--primary {
+  background: var(--atm-primary-btn-bg);
+  color: var(--atm-primary-btn-text);
+  font-weight: 600;
+}
+.atm-detail-btn--primary:hover:not(:disabled) { background: var(--atm-primary-btn-hover-bg); }
+
+.atm-detail-content {
+  display: flex;
+  flex: 1;
+  gap: 32px;
+  overflow: auto;
+  min-height: 0;
+  margin-top: 8px;
+  padding: 0 0 20px;
+}
+.atm-detail-content > .atm-modal-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding-left: 24px;
+}
+.atm-detail-content > .atm-modal-body:last-child { padding-right: 24px; }
+
+/* ---------- 表单字段 ---------- */
+.atm-modal-body {
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: visible;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.atm-modal-body > * { flex-shrink: 0; }
+.atm-modal-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 400;
+  margin: 0 0 8px;
+  padding-top: 16px;
+  color: var(--atm-text-secondary);
+}
+.atm-modal-label:first-child { padding-top: 0; }
+.atm-modal-hint { font-size: 12px; color: var(--atm-text-muted); margin: 0 0 8px; line-height: 1.4; }
+.atm-modal-hint-inline { display: inline; font-size: 12px; font-weight: normal; margin-left: 4px; color: var(--atm-text-muted); }
+.atm-modal-input {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--atm-border);
+  background: var(--atm-surface);
+  color: var(--atm-text-primary);
+  border-radius: 8px;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.atm-modal-input:focus { border-color: var(--atm-border-focus); }
+.atm-modal-input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* 工作空间输入（全宽输入框 + 下拉建议） */
+.atm-workspace-input { position: relative; }
+.atm-workspace-input__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--atm-popover-bg);
+  border: 1px solid var(--atm-border);
+  border-radius: 8px;
+  box-shadow: var(--atm-modal-shadow);
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  box-sizing: border-box;
+}
+.atm-workspace-input__option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+}
+.atm-workspace-input__option:hover { background: var(--atm-surface-hover); }
+.atm-workspace-input__option-path {
+  font-size: 13px;
+  color: var(--atm-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.atm-workspace-input__option-title {
+  font-size: 11px;
+  color: var(--atm-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 提示词（边框大输入区 + 底部工具条） */
+.atm-modal-chat-input {
+  border: 1px solid var(--atm-border);
+  border-radius: 6px;
+  background: var(--atm-surface);
+  padding: 12px;
+  transition: border-color 0.15s ease;
+}
+.atm-modal-chat-input:focus-within { border-color: var(--atm-border-focus); }
+.atm-prompt-textarea {
+  width: 100%;
+  min-height: 120px;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: var(--atm-text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.5;
+  padding: 0;
+  box-sizing: border-box;
+}
+.atm-prompt-textarea::placeholder { color: var(--atm-chat-placeholder); }
+.atm-prompt-textarea:disabled { opacity: 0.6; }
+.atm-prompt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.atm-prompt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wb-color-text-primary, rgba(0, 0, 0, 0.9));
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+.atm-prompt-chip:hover:not(:disabled) { background: var(--wb-bg-hover); }
+.atm-prompt-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.atm-prompt-chip-label { line-height: 1; }
+.atm-prompt-chip-caret { display: inline-flex; align-items: center; margin-left: 1px; }
+.atm-chip-dropdown { display: inline-flex; align-items: center; position: relative; }
+.atm-chip-dropdown__menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  max-width: 280px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--atm-popover-bg);
+  border: 1px solid var(--atm-border);
+  border-radius: 8px;
+  box-shadow: var(--atm-modal-shadow);
+  padding: 4px;
+  z-index: 100;
+  box-sizing: border-box;
+}
+.atm-chip-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.atm-chip-option:hover { background: var(--atm-surface-hover); }
+.atm-chip-option.active { font-weight: 500; }
+.atm-chip-option-check {
+  width: 16px;
+  min-width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--atm-text-primary);
+}
+.atm-chip-empty { padding: 10px 12px; font-size: 12px; color: var(--atm-text-muted); }
+
+/* ---------- 执行频率控件 ---------- */
+.atm-frequency-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+.atm-periodic-controls { align-items: center; flex-wrap: wrap; }
+.atm-schedule-daily,
+.atm-schedule-once { margin-bottom: 0; }
+
+.atm-custom-select { position: relative; display: inline-block; }
+.atm-custom-select.disabled { opacity: 0.6; }
+.atm-custom-select-trigger {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--atm-border);
+  border-radius: 8px;
+  padding: 0 10px 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+  background-color: var(--atm-surface);
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: border-color 0.15s ease;
+  outline: none;
+}
+.atm-custom-select-trigger-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.atm-custom-select-trigger-arrow { flex-shrink: 0; color: var(--atm-text-muted); transition: transform 0.15s ease; }
+.atm-custom-select-trigger.open .atm-custom-select-trigger-arrow { transform: rotate(180deg); }
+.atm-custom-select-trigger:hover { border-color: var(--atm-border-hover); }
+.atm-custom-select-trigger.open { border-color: var(--atm-border-focus); }
+.atm-custom-select-trigger.placeholder { color: var(--atm-text-placeholder); }
+.atm-custom-select-dropdown {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--atm-border);
+  border-radius: 8px;
+  background: var(--atm-popover-bg);
+  box-shadow: var(--atm-modal-shadow);
+  padding: 6px;
+  box-sizing: border-box;
+}
+.atm-custom-select-option {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+}
+.atm-custom-select-option:hover { background: var(--atm-surface-hover); }
+.atm-custom-select-option.active { background: var(--atm-surface-active); font-weight: 500; }
+
+.atm-yearly-selectors { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.atm-weekday-picker,
+.atm-monthday-picker { position: relative; width: 220px; max-width: 100%; }
+.atm-weekday-picker.disabled,
+.atm-monthday-picker.disabled { opacity: 0.6; }
+.atm-weekday-picker-trigger,
+.atm-monthday-picker-trigger {
+  min-height: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 4px 28px 4px 8px;
+  border: 1px solid var(--atm-border);
+  border-radius: 8px;
+  background: var(--atm-surface);
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+}
+.atm-weekday-picker-trigger.active,
+.atm-weekday-picker-trigger:hover,
+.atm-monthday-picker-trigger.active,
+.atm-monthday-picker-trigger:hover { border-color: var(--atm-border-focus); }
+.atm-weekday-picker-placeholder,
+.atm-monthday-picker-placeholder { font-size: 13px; color: var(--atm-text-placeholder); }
+.atm-weekday-picker-tags,
+.atm-monthday-picker-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.atm-weekday-picker-tag,
+.atm-monthday-picker-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--wb-bg-tertiary, #F2F2F2);
+  color: var(--wb-color-text-primary, rgba(0, 0, 0, 0.9));
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  flex-shrink: 0;
+}
+.atm-weekday-picker-tag-remove,
+.atm-monthday-picker-tag-remove,
+.atm-weekday-picker-clear,
+.atm-monthday-picker-clear {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.75;
+}
+.atm-weekday-picker-tag-remove:hover,
+.atm-monthday-picker-tag-remove:hover,
+.atm-weekday-picker-clear:hover:not(:disabled),
+.atm-monthday-picker-clear:hover:not(:disabled) { opacity: 1; }
+.atm-weekday-picker-clear,
+.atm-monthday-picker-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--atm-text-tertiary);
+  z-index: 2;
+  background: var(--atm-surface);
+  padding: 0 2px;
+}
+.atm-weekday-picker-dropdown,
+.atm-monthday-picker-dropdown {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--atm-border);
+  border-radius: 8px;
+  background: var(--atm-popover-bg);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+  padding: 6px;
+  box-sizing: border-box;
+}
+.atm-weekday-grid,
+.atm-monthday-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.atm-weekday-item,
+.atm-monthday-item {
+  min-width: 40px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--atm-border-soft);
+  background: var(--atm-surface-soft);
+  color: var(--atm-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.atm-weekday-item.active,
+.atm-monthday-item.active {
+  border-color: var(--atm-primary-btn-border);
+  background: var(--atm-primary-btn-bg);
+  color: var(--atm-primary-btn-text);
+}
+.atm-weekday-item:hover:not(.active),
+.atm-monthday-item:hover:not(.active) { background: var(--atm-surface-hover); }
+
+.atm-time-picker { position: relative; }
+.atm-time-picker.disabled { opacity: 0.6; }
+.atm-time-picker-trigger {
+  width: 110px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--atm-border);
+  border-radius: 6px;
+  background: var(--atm-surface);
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+.atm-time-picker-trigger:hover,
+.atm-time-picker.open .atm-time-picker-trigger { border-color: var(--atm-border-focus); }
+.atm-time-picker-trigger:disabled { cursor: not-allowed; }
+.atm-time-picker-value { font-size: 13px; font-family: var(--wb-font-mono, monospace); letter-spacing: 0.04em; }
+.atm-time-picker-icon { color: var(--atm-text-tertiary); }
+.atm-time-picker-dropdown {
+  border-radius: 10px;
+  border: 1px solid var(--atm-border);
+  background: var(--atm-popover-bg);
+  box-shadow: var(--atm-modal-shadow);
+  padding: 12px;
+  box-sizing: border-box;
+}
+.atm-time-picker-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.atm-time-picker-column { min-width: 0; }
+.atm-time-picker-column-title { font-size: 12px; color: var(--atm-text-secondary); margin-bottom: 8px; text-align: center; }
+.atm-time-picker-options { max-height: 208px; overflow-y: auto; scrollbar-width: none; }
+.atm-time-picker-options::-webkit-scrollbar { width: 0; display: none; }
+.atm-time-picker-option {
+  width: 100%;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--wb-font-mono, monospace);
+  transition: background-color 0.12s ease;
+}
+.atm-time-picker-option:hover { background: var(--atm-surface-active-hover); }
+.atm-time-picker-option.active { background: var(--atm-surface-active); font-weight: 500; }
+
+.atm-schedule-days {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  width: fit-content;
+  flex-wrap: nowrap;
+  padding: 0;
+}
+.atm-schedule-day {
+  min-width: 0;
+  height: 32px;
+  padding: 5px 16px;
+  border-radius: 0;
+  border: 1px solid var(--wb-color-border-primary, #E5E5E5);
+  background: var(--atm-surface);
+  color: var(--atm-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  position: relative;
+}
+.atm-schedule-day + .atm-schedule-day { margin-left: -1px; }
+.atm-schedule-day:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+.atm-schedule-day:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+.atm-schedule-day:hover:not(.active) { z-index: 1; border-color: var(--atm-border-hover); color: var(--atm-text-primary); }
+.atm-schedule-day.active {
+  z-index: 2;
+  background: var(--wb-palette-gray-3);
+  border-color: var(--wb-palette-black-50);
+  color: var(--atm-text-primary);
+  font-weight: 500;
+}
+[data-theme="dark"] .atm-schedule-day.active { background: var(--atm-surface-active); border-color: var(--wb-color-text-tertiary); }
+.atm-schedule-day.disabled { cursor: not-allowed; opacity: 0.5; pointer-events: none; }
+.atm-schedule-interval {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.atm-schedule-interval-prefix,
+.atm-schedule-interval-unit { color: var(--atm-text-secondary); }
+.atm-schedule-interval-input { width: 70px; height: 36px; text-align: center; border-radius: 6px; }
+
+/* ---------- 生效日期区间 / 单次日期 ---------- */
+.atm-validity-picker { position: relative; margin-bottom: 16px; }
+.atm-single-date-picker { min-width: 220px; margin-bottom: 0; }
+.atm-validity-trigger {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--atm-border);
+  background: var(--atm-surface);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+.atm-validity-trigger:hover,
+.atm-validity-trigger.active { border-color: var(--atm-border-focus); }
+.atm-validity-trigger.disabled { opacity: 0.6; cursor: not-allowed; }
+.atm-validity-placeholder,
+.atm-validity-value {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.atm-validity-placeholder { color: var(--atm-text-placeholder); }
+.atm-validity-value { color: var(--atm-text-primary); }
+.atm-validity-actions { margin-left: auto; display: inline-flex; align-items: center; flex-shrink: 0; }
+.atm-validity-clear {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--atm-surface-active);
+  color: var(--atm-text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.atm-validity-clear:hover:not(:disabled) { background: var(--atm-surface-hover); color: var(--atm-text-primary); }
+.atm-validity-dropdown {
+  border-radius: 10px;
+  border: 1px solid var(--atm-border);
+  background: var(--atm-popover-bg);
+  box-shadow: var(--atm-modal-shadow);
+  padding: 16px;
+  box-sizing: border-box;
+}
+.atm-validity-calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.atm-validity-nav-group { display: inline-flex; align-items: center; gap: 4px; }
+.atm-validity-nav-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--atm-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.atm-validity-nav-btn:hover { background: var(--atm-surface-hover); color: var(--atm-text-primary); }
+.atm-validity-title { font-size: 14px; font-weight: 600; color: var(--atm-text-primary); }
+.atm-validity-weekdays,
+.atm-validity-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.atm-validity-weekdays { margin-bottom: 6px; }
+.atm-validity-weekday { text-align: center; font-size: 12px; color: var(--atm-text-secondary); padding: 4px 0; }
+.atm-validity-days { gap: 2px 0; }
+.atm-validity-day {
+  height: 34px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--atm-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.atm-validity-day:hover { background: var(--atm-surface-hover); }
+.atm-validity-day:disabled {
+  color: color-mix(in srgb, var(--atm-text-muted) 75%, transparent);
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.atm-validity-day:disabled:hover { background: transparent; }
+.atm-validity-day.other-month { color: color-mix(in srgb, var(--atm-text-muted) 85%, transparent); }
+.atm-validity-day.today { font-weight: 700; color: var(--atm-text-primary); }
+.atm-validity-day.range-start,
+.atm-validity-day.range-end,
+.atm-validity-day.preview-start,
+.atm-validity-day.preview-end {
+  background: var(--atm-calendar-selected-bg);
+  color: var(--atm-calendar-selected-text);
+  font-weight: 500;
+}
+.atm-validity-day.range-start,
+.atm-validity-day.preview-start { border-radius: 8px 0 0 8px; }
+.atm-validity-day.range-end,
+.atm-validity-day.preview-end { border-radius: 0 8px 8px 0; }
+.atm-validity-day.range-start.range-end,
+.atm-validity-day.preview-start.preview-end { border-radius: 8px; }
+.atm-validity-day.in-range,
+.atm-validity-day.preview-in-range { background: var(--atm-calendar-range-bg); color: var(--atm-calendar-range-text); }
+.atm-validity-day.in-range:hover,
+.atm-validity-day.preview-in-range:hover { background: var(--atm-calendar-range-hover-bg); }
+.atm-validity-calendar-footer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--atm-border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.atm-validity-hint-text { font-size: 12px; color: var(--atm-text-secondary); }
+.atm-validity-today-btn {
+  border: none;
+  background: transparent;
+  color: var(--atm-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+.atm-validity-today-btn:hover { background: var(--atm-surface-hover); }
+
+/* ---------- 推送开关 ---------- */
+.atm-schedule-push-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0;
+  min-height: 36px;
+}
+.atm-push-toggle-left { display: flex; align-items: center; gap: 6px; }
+.atm-toggle-text { font-size: 14px; font-weight: 400; color: var(--atm-text-secondary); }
+.atm-push-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--atm-text-secondary);
+  cursor: pointer;
+  opacity: 0.7;
+}
+.atm-push-info-icon:hover { opacity: 1; }
+.wb-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border: none;
+  border-radius: 999px;
+  background: var(--atm-border);
+  cursor: pointer;
+  padding: 2px;
+  box-sizing: border-box;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+.wb-switch--checked { background: var(--atm-primary-btn-bg); }
+.wb-switch--disabled { opacity: 0.5; cursor: not-allowed; }
+.wb-switch-thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--atm-switch-thumb);
+  box-shadow: var(--atm-switch-thumb-shadow);
+  transition: transform 0.15s ease;
+}
+.wb-switch--checked .wb-switch-thumb { transform: translateX(16px); }
+
+.atm-detail-created-at {
+  color: var(--wb-color-text-tertiary, rgba(0, 0, 0, 0.5));
+  font-size: 14px;
+  line-height: 22px;
+  margin-top: 16px;
+}
+
+/* ---------- 详情页右侧运行历史 ---------- */
+.atm-detail-run-history {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--atm-border-softest);
+}
+.atm-detail-run-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  margin-bottom: 8px;
+  padding-left: 20px;
+  padding-right: 24px;
+}
+.atm-detail-run-history-title { font-size: 14px; font-weight: 400; color: var(--atm-text-secondary); }
+.atm-detail-filter-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--atm-text-primary);
+  cursor: pointer;
+  padding: 0;
+}
+.atm-detail-filter-btn:hover { background: var(--wb-palette-gray-3); }
+[data-theme="dark"] .atm-detail-filter-btn:hover { background: var(--atm-surface-active); }
+.atm-detail-filter-btn svg { width: 16px; height: 16px; opacity: 0.7; }
+.atm-detail-run-history-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 12px;
+  padding-right: 16px;
+}
+.atm-run-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 8px;
+  gap: 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.atm-run-history-item:hover { background: var(--wb-palette-gray-3); }
+[data-theme="dark"] .atm-run-history-item:hover { background: var(--atm-surface-hover); }
+.atm-run-history-item-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  color: var(--atm-text-primary);
+  font-size: 14px;
+  line-height: 22px;
+}
+.atm-run-history-item-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.atm-run-history-item-time { color: var(--wb-color-text-tertiary, rgba(0, 0, 0, 0.5)); font-size: 14px; line-height: 22px; }
+.atm-run-history-item-status { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+.atm-run-history-item-status.success { color: var(--atm-result-success-text); }
+.atm-run-history-item-status.failed { color: var(--atm-result-failed-text); }
+.atm-run-history-item-archive,
+.atm-run-history-item-delete {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--wb-color-text-secondary);
+  cursor: pointer;
+}
+.atm-run-history-item-archive svg path { opacity: 1; }
+.atm-run-history-item-archive:hover,
+.atm-run-history-item-delete:hover { color: var(--wb-color-text-primary); }
+.atm-run-history-item--archived .atm-run-history-item-status { color: var(--atm-text-secondary); }
+.atm-run-history-item--archivable:hover .atm-run-history-item-status { display: none; }
+.atm-run-history-item--archivable:hover .atm-run-history-item-archive { display: flex; }
+.atm-run-history-item--archived:hover .atm-run-history-item-status { display: none; }
+.atm-run-history-item--archived:hover .atm-run-history-item-delete { display: flex; }
+
+/* ---------- 连接器选择器 ---------- */
+.connector-selector-field { position: relative; display: flex; flex-direction: column; }
+.connector-selector-field__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--atm-border);
+  border-radius: 6px;
+  background: var(--atm-surface);
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+  min-height: 38px;
+  box-sizing: border-box;
+}
+.connector-selector-field__trigger:hover { border-color: var(--atm-border-focus); }
+.connector-selector-field__trigger--open { border-color: var(--atm-border-focus); }
+.connector-selector-field__trigger--disabled { opacity: 0.5; cursor: not-allowed; }
+.connector-selector-field__trigger--disabled:hover { border-color: var(--atm-border); }
+.connector-selector-field__trigger-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--atm-text-primary);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.connector-selector-field__trigger-text--placeholder { color: var(--atm-text-placeholder); }
+.connector-selector-field__arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--atm-text-secondary);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.connector-selector-field__arrow--open { transform: rotate(180deg); }
+.connector-selector-field__dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  margin-top: 4px;
+  background: var(--atm-popover-bg);
+  border: 1px solid var(--atm-border);
+  border-radius: 6px;
+  box-shadow: var(--atm-modal-shadow);
+  max-height: 280px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.connector-selector-field__list { display: flex; flex-direction: column; overflow-y: auto; padding: 4px 0; }
+.connector-selector-field__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.connector-selector-field__item:hover { background-color: var(--atm-surface-hover); }
+.connector-selector-field__checkbox { flex: 1; min-width: 0; }
+.connector-selector-field__item-name {
+  font-size: 13px;
+  color: var(--atm-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.connector-selector-field__empty { padding: 16px; font-size: 12px; color: var(--atm-text-muted); text-align: center; }
+.connector-selector-field__manage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--atm-text-secondary);
+  cursor: pointer;
+  border-top: 1px solid var(--atm-border-soft);
+  transition: background-color 0.12s ease;
+}
+.connector-selector-field__manage:hover { background-color: var(--atm-surface-hover); color: var(--atm-text-primary); }
+.connector-selector-field__manage svg { flex-shrink: 0; }
+
+/* ---------- 权限选择器（提示词工具条 chip） ---------- */
+.automation-permission-picker { display: inline-flex; align-items: center; position: relative; }
+.automation-permission-picker__trigger {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  outline: none;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--wb-color-text-primary, rgba(0, 0, 0, 0.9));
+}
+.automation-permission-picker__trigger:hover { background-color: var(--wb-bg-hover); }
+.automation-permission-picker__trigger:disabled { opacity: 0.5; cursor: not-allowed; }
+.automation-permission-picker__trigger--warning { color: var(--wb-warning); }
+.automation-permission-picker__trigger--warning:hover { background-color: var(--wb-warning-soft); }
+.automation-permission-picker__trigger--safe { color: var(--wb-color-text-primary, rgba(0, 0, 0, 0.9)); }
+.automation-permission-picker__label { line-height: 1; }
+.automation-permission-picker__caret { display: inline-flex; align-items: center; margin-left: 1px; line-height: 1; }
+.automation-permission-picker__dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: 360px;
+  max-width: calc(100vw - 48px);
+  background: var(--atm-popover-bg);
+  border: 1px solid var(--atm-border);
+  border-radius: 8px;
+  box-shadow: var(--atm-modal-shadow);
+  padding: 4px;
+  z-index: 100;
+  box-sizing: border-box;
+}
+.automation-permission-picker__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.automation-permission-picker__item:hover { background: var(--atm-surface-hover); }
+.automation-permission-picker__item--divider { border-top: 1px solid var(--atm-border-soft); }
+.automation-permission-picker__check-col {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.automation-permission-picker__icon-col {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.automation-permission-picker__option { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; }
+.automation-permission-picker__option-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--wb-text-strong);
+  line-height: 1.4;
+}
+.automation-permission-picker__option-recommend { font-weight: 400; color: var(--wb-text-weak); font-size: 13px; margin-left: 4px; }
+.automation-permission-picker__option-desc { font-size: 12px; color: var(--wb-text-weak); line-height: 1.5; white-space: normal; max-width: 320px; }
+
+/* ---------- 权限确认弹窗 ---------- */
+.automation-permission-confirm__dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-spacing-5);
+  padding: 28px var(--wb-spacing-8) var(--wb-spacing-7);
+  width: 440px;
+  max-width: calc(100vw - 48px);
+  background: var(--atm-modal-bg, #fff);
+  border-radius: 12px;
+  box-shadow: var(--atm-modal-shadow);
+  box-sizing: border-box;
+}
+.automation-permission-confirm__header { display: flex; align-items: center; gap: var(--wb-spacing-3); }
+.automation-permission-confirm__icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--wb-warning); }
+.automation-permission-confirm__title {
+  font-size: var(--wb-spacing-5);
+  font-weight: 600;
+  color: var(--wb-text-strong);
+  margin: 0;
+  line-height: 1.4;
+}
+.automation-permission-confirm__desc { font-size: 13px; line-height: 1.6; color: var(--wb-text-medium); margin: 0; }
+.automation-permission-confirm__list { margin: 0; padding-left: var(--wb-spacing-6); list-style: disc; }
+.automation-permission-confirm__list li { font-size: 13px; line-height: 1.8; color: var(--wb-text-strong); }
+.automation-permission-confirm__checkbox { align-items: flex-start; margin-top: var(--wb-spacing-2); }
+.automation-permission-confirm__actions { display: flex; align-items: center; gap: var(--wb-spacing-4); margin-top: var(--wb-spacing-3); }
+.automation-permission-confirm__fallback-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: var(--wb-text-link);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.automation-permission-confirm__fallback-link:hover { text-decoration: underline; }
+.automation-permission-confirm__actions-right { display: flex; align-items: center; gap: var(--wb-spacing-3); margin-left: auto; }
+
+/* ---------- 通用按钮 / 确认弹窗 / 复选框 ---------- */
+.atm-btn {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  height: 36px;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s, background-color 0.15s, border-color 0.15s, color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.atm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.atm-btn--primary { background: var(--atm-primary-btn-bg); color: var(--atm-primary-btn-text); border-color: var(--atm-primary-btn-border); }
+.atm-btn--primary:hover:not(:disabled) { background: var(--atm-primary-btn-hover-bg); border-color: var(--atm-primary-btn-hover-border); }
+.atm-btn--secondary { background: var(--atm-secondary-btn-bg); color: var(--atm-secondary-btn-text); border: 1px solid var(--atm-secondary-btn-border); }
+.atm-btn--secondary:hover:not(:disabled) { background: var(--atm-secondary-btn-hover-bg); }
+.atm-btn--danger { background: var(--atm-result-failed-bg); color: var(--atm-result-failed-text); border: 1px solid var(--atm-result-failed-border); }
+.atm-btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--atm-result-failed-bg) 85%, var(--atm-result-failed-text) 15%);
+  border-color: color-mix(in srgb, var(--atm-result-failed-border) 78%, var(--atm-result-failed-text) 22%);
+}
+
+.atm-confirm-dialog {
+  width: 400px;
+  max-width: calc(100vw - 48px);
+  background: var(--atm-modal-bg, #fff);
+  border-radius: 12px;
+  box-shadow: var(--atm-modal-shadow);
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+}
+.atm-confirm-title { margin: 0; font-size: 16px; font-weight: 600; color: var(--atm-text-primary); }
+.atm-confirm-content { margin: 0; font-size: 13px; line-height: 1.6; color: var(--atm-text-secondary); }
+.atm-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+
+.wb-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.wb-checkbox--disabled { opacity: 0.5; cursor: not-allowed; }
+.wb-checkbox-input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.wb-checkbox-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--wb-palette-black-20, rgba(0, 0, 0, 0.2));
+  border-radius: 4px;
+  background: var(--atm-surface, #fff);
+  color: var(--atm-primary-btn-text, #fff);
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  box-sizing: border-box;
+}
+[data-theme="dark"] .wb-checkbox-box { border-color: rgba(255, 255, 255, 0.3); }
+.wb-checkbox--checked .wb-checkbox-box { background: var(--atm-primary-btn-bg, #111); border-color: var(--atm-primary-btn-border, #111); }
+.wb-checkbox-label { font-size: 13px; line-height: 1.5; color: var(--atm-text-primary); }

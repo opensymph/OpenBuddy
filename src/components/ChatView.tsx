@@ -18,6 +18,9 @@ export function ChatView({
   cwd,
   workspaces,
   onSelectWorkspace,
+  onRewound,
+  onForked,
+  onToast,
 }: {
   onSend: (text: string) => void;
   onCancel: () => void;
@@ -27,6 +30,12 @@ export function ChatView({
   cwd?: string;
   workspaces?: WorkspaceInfo[];
   onSelectWorkspace?: (cwd: string) => void;
+  /** Rewind rewrote backend history — reload the transcript. */
+  onRewound?: () => void;
+  /** Fork created a new session id — navigate to it. */
+  onForked?: (newSessionId: string) => void;
+  /** Surface transient feedback from the rewind/fork toolbar. */
+  onToast?: (msg: string) => void;
 }) {
   const messages = useSessionStore((s) => s.messages);
   const streaming = useSessionStore((s) => s.streaming);
@@ -97,7 +106,15 @@ export function ChatView({
           <div className="chatview__tokens">{usage.totalTokens} tokens</div>
         ) : null}
         {/* Rewind / fork: 会话级工具，放在输入框正上方（不再漂浮到左上角挡标题栏）。 */}
-        {sessionId && !streaming && <RewindBar sessionId={sessionId} />}
+        {sessionId && !streaming && (
+          <RewindBar
+            sessionId={sessionId}
+            cwd={cwd}
+            onRewound={onRewound}
+            onForked={onForked}
+            onToast={onToast}
+          />
+        )}
         <Composer
           streaming={streaming}
           onSend={onSend}

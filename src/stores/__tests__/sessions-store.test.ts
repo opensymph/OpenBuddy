@@ -82,4 +82,25 @@ describe("sessions-store drafts", () => {
     useSessionsStore.getState().clearDraft(HOME_DRAFT_KEY);
     expect(useSessionsStore.getState().drafts[HOME_DRAFT_KEY]).toBeUndefined();
   });
+
+  it("新建条目兜底填 updatedAt(避免在侧边栏 recently-active 排序中沉底)", () => {
+    useSessionsStore.getState().setHomeCwd("/home");
+    // 调用方没传 updatedAt → store 应自动补一个,使新会话能置顶。
+    useSessionsStore.getState().upsert({ sessionId: "fresh", cwd: "/home" });
+    const entry = useSessionsStore
+      .getState()
+      .independent.find((x) => x.sessionId === "fresh");
+    expect(entry?.updatedAt).toBeTruthy();
+
+    // 调用方显式传了 updatedAt → 以调用方为准。
+    useSessionsStore.getState().upsert({
+      sessionId: "fresh2",
+      cwd: "/home",
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    });
+    const entry2 = useSessionsStore
+      .getState()
+      .independent.find((x) => x.sessionId === "fresh2");
+    expect(entry2?.updatedAt).toBe("2020-01-01T00:00:00.000Z");
+  });
 });

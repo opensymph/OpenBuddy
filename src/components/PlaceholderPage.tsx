@@ -1,7 +1,7 @@
 import { AgentToolIcon } from "@/foundation/components/Icon/icons";
 import { LocalAssistantView } from "./LocalAssistantView";
 import { ProjectsPanel } from "./ProjectsPanel";
-import { ExpertsPanel } from "./ExpertsPanel";
+import { ExpertsPanel } from "./experts-panel";
 import { AutomationPanel } from "./AutomationPanel";
 import { ResourcesPanel } from "./ResourcesPanel";
 import { PluginsPanel } from "./PluginsPanel";
@@ -14,6 +14,8 @@ import type { ProjectMeta } from "@/stores/projects-store";
 interface PlaceholderPageProps {
   label: string;
   onPlaceholder?: (label: string) => void;
+  /** Navigate to another sidebar view (e.g. 自动化 → 管理连接器 → 专家·技能·连接器). */
+  onNavigate?: (label: string) => void;
   /** Start a new chat guided by an expert/assistant definition. */
   onStartWithExpert?: (agent: AgentEntry) => void;
   /** Surface transient feedback (errors, success toasts). */
@@ -46,6 +48,7 @@ interface PlaceholderPageProps {
 export function PlaceholderPage({
   label,
   onPlaceholder,
+  onNavigate,
   onStartWithExpert,
   onToast,
   cwd,
@@ -92,7 +95,7 @@ export function PlaceholderPage({
   }
 
   if (label === "自动化") {
-    return <AutomationPanel onToast={onToast} />;
+    return <AutomationPanel onToast={onToast} onNavigate={onNavigate} />;
   }
 
   if (label === "发现") {

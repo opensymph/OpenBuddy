@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useSessionsStore } from "@/stores/sessions-store";
+import { IS_MACOS } from "@/lib/platform";
 import {
   grokRenameSession,
   grokDeleteSession,
@@ -63,9 +64,19 @@ function relativeTime(iso: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
-/** Pinned entries first; order among equal-pin entries is preserved (stable). */
-function sortPinnedFirst<T extends { pinned?: boolean }>(list: T[]): T[] {
-  return [...list].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
+/** Pinned entries first; within a pin tier, most-recently-active first
+ *  (by `updatedAt`) so a session you just chatted in rises to the top and its
+ *  relative-time tail stays honest. Insertion order breaks remaining ties. */
+function sortPinnedFirst<
+  T extends { pinned?: boolean; updatedAt?: string },
+>(list: T[]): T[] {
+  return [...list].sort((a, b) => {
+    const pin = Number(!!b.pinned) - Number(!!a.pinned);
+    if (pin !== 0) return pin;
+    const at = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const bt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return bt - at;
+  });
 }
 
 interface ContextMenuProps {
@@ -332,12 +343,14 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar__logo-row">
-        <div className="sidebar__logo-col">
+      {/* macOS Overlay 标题栏:红绿灯悬浮在 logo 行左上,整行作为拖拽区
+          (Windows 的窗口拖拽由自绘 TitleBar 负责,故仅在 mac 加属性)。 */}
+      <div className="sidebar__logo-row" {...(IS_MACOS ? { "data-tauri-drag-region": true } : {})}>
+        <div className="sidebar__logo-col" {...(IS_MACOS ? { "data-tauri-drag-region": true } : {})}>
           <span className="sidebar__logo">OpenBuddy</span>
           <span className="sidebar__version">v0.1.0</span>
         </div>
-        <div className="sidebar__logo-spacer" />
+        <div className="sidebar__logo-spacer" {...(IS_MACOS ? { "data-tauri-drag-region": true } : {})} />
         <button
           className="sidebar__icon-btn"
           aria-label="收起侧边栏"

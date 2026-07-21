@@ -36,6 +36,24 @@ import {
 } from "./lib/grok-client";
 import type { AgentEntry } from "./lib/types";
 import type { ProjectMeta } from "./stores/projects-store";
+import { IS_MACOS } from "./lib/platform";
+
+/**
+ * Derive a short sidebar title from the user's first message.
+ * Mirrors grok's `title_fallback_from_user_text`: strip system/skill markup,
+ * take the first ~10 words, cap at 40 chars.
+ */
+function deriveTitle(text: string): string {
+  // Strip <system-reminder>…</system-reminder> blocks (system-injected context).
+  let clean = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+  // Strip skill XML markup (<command-name>…</command-name> etc.).
+  clean = clean.replace(/<\/?command-(?:name|message|args)>/g, "").trim();
+  if (!clean) clean = text.trim();
+  // Take first 10 whitespace-delimited words.
+  const words = clean.split(/\s+/).slice(0, 10).join(" ");
+  if (!words) return "新会话";
+  return words.length > 40 ? words.slice(0, 40) + "…" : words;
+}
 
 export default function App() {
   return (
@@ -118,8 +136,14 @@ function Shell() {
           onSummary: ({ sessionId, title }) => {
             // grok generated (or we renamed) a session title — update the
             // sidebar entry in place. This overrides the "新会话" placeholder
-            // set optimistically in handleSendNew.
-            sessionsStore.getState().upsert({ sessionId, title });
+            // set optimistically in handleSendNew. Stamp updatedAt so the
+            // sidebar can re-sort the freshly-active session to the top.
+            console.log('[OpenBuddy] Received grok://summary:', { sessionId, title });
+            sessionsStore.getState().upsert({
+              sessionId,
+              title,
+              updatedAt: new Date().toISOString(),
+            });
             void notificationAppend(
               "summary",
               `生成会话标题：${title}`,
@@ -164,6 +188,11 @@ function Shell() {
             );
           },
           onModelsUpdate: (p) => {
+            // grok reloaded its model catalog — refresh the picker so new
+            // providers appear without a restart.
+            providersList().then((list) => {
+              setModels(list.map((m) => ({ id: m.modelId, label: m.name || m.modelId })));
+            }).catch(() => {});
             void notificationAppend(
               "models_update",
               "模型列表已更新",
@@ -290,10 +319,11 @@ function Shell() {
       sessionsStore.getState().setCurrent(sessionId);
       // 从占位视图（如「本地助理」页）发起会话后，切到 ChatView 看回复。
       setPlaceholderView(null);
-      // Placeholder title — grok will push the LLM-generated title via the
-      // grok://summary event (SessionSummaryGenerated) within a few seconds,
-      // which our onSummary handler applies to the same store entry.
-      sessionsStore.getState().upsert({ sessionId, title: "新会话", cwd });
+      // Placeholder title derived from the user's first message. grok will
+      // push the LLM-generated title via the grok://summary event
+      // (SessionSummaryGenerated) within a few seconds, which our onSummary
+      // handler applies to the same store entry, overriding this fallback.
+      sessionsStore.getState().upsert({ sessionId, title: deriveTitle(text), cwd });
       sessionStore.getState().setSession(sessionId);
       sessionStore.getState().pushUser(text);
       sessionStore.getState().startStreaming();
@@ -308,6 +338,11 @@ function Shell() {
 
   const handleSendCurrent = async (text: string) => {
     if (!currentSessionId) return handleSendNew(text);
+    // Guard against double-send / send-during-streaming. Composer also guards
+    // via its `streaming` prop, but that value can be stale within the same
+    // render tick; the store flag is the source of truth. A second pushUser +
+    // startStreaming would orphan an empty placeholder that never completes.
+    if (sessionStore.getState().streaming) return;
     try {
       sessionStore.getState().pushUser(text);
       sessionStore.getState().startStreaming();
@@ -318,12 +353,17 @@ function Shell() {
   };
 
   const handleCancel = async () => {
-    if (currentSessionId) {
-      try {
-        await grokCancel(currentSessionId);
-      } catch (e) {
-        sessionStore.getState().setError(String(e));
-      }
+    if (!currentSessionId) return;
+    try {
+      await grokCancel(currentSessionId);
+    } catch (e) {
+      sessionStore.getState().setError(String(e));
+    } finally {
+      // Don't rely on the backend emitting a `complete` for the cancel (it may
+      // be dropped by routing after a fast switch). Finalize locally so the
+      // Composer's stop button and the loading row don't hang. Already-streamed
+      // text is kept; only the in-flight flag is cleared.
+      sessionStore.getState().stopStreaming();
     }
   };
 
@@ -382,6 +422,18 @@ function Shell() {
     sessionStore.getState().reset();
   };
 
+  /** Re-fetch the provider list and update the model picker. Called after
+   *  saving/deleting a provider in Settings so the change is visible
+   *  immediately without restarting. */
+  const refreshModels = async () => {
+    try {
+      const list = await providersList();
+      setModels(list.map((m) => ({ id: m.modelId, label: m.name || m.modelId })));
+    } catch {
+      // Non-fatal — the picker keeps its previous list.
+    }
+  };
+
   // 空间节点展开/折叠: 记录展开态, 首次展开时懒加载该 cwd 的子会话。
   const handleToggleWorkspace = async (cwd: string, next: boolean) => {
     sessionsStore.getState().setExpanded(cwd, next);
@@ -398,10 +450,11 @@ function Shell() {
   const handleSelectSession = async (sessionId: string, sessionCwd?: string) => {
     setPlaceholderView(null);
     sessionsStore.getState().setCurrent(sessionId);
-    // Clear the transcript before load: grok replays the persisted history as
-    // a fresh stream of SessionUpdate messages, which our grok://update
-    // listener funnels into the store. If we don't reset first, the replayed
-    // messages get appended to whatever was already on screen.
+    // setSession no longer wipes the transcript — it just moves focus. If we
+    // already have a cached transcript for this session it arms replay
+    // suppression so grok's history re-stream can't duplicate/merge it; if we
+    // don't (first open / post-restart) the upcoming replay fills the empty
+    // transcript. Either way the focused mirror is refreshed in one step.
     sessionStore.getState().setSession(sessionId);
     try {
       // Load with the session's OWN cwd (independent sessions have cwd="").
@@ -409,7 +462,36 @@ function Shell() {
       await grokLoadSession(sessionId, sessionCwd ?? "");
     } catch (e) {
       sessionStore.getState().setError(String(e));
+    } finally {
+      // Replay window is over: a *new* turn's updates for this session must be
+      // ingested again. (No-op when there was no cached transcript to suppress.)
+      sessionStore.getState().clearReplaySuppression(sessionId);
     }
+  };
+
+  // Rewind rewrites the backend history, so our cached transcript is stale —
+  // drop it and reload from grok so the UI matches the rolled-back state.
+  const handleRewound = () => {
+    const id = sessionStore.getState().sessionId;
+    if (!id) return;
+    sessionStore.getState().dropSessionCache(id);
+    sessionStore.getState().setSession(id); // empty cache → replay refills
+    void grokLoadSession(id, cwdRef.current).catch((e) =>
+      sessionStore.getState().setError(String(e))
+    );
+  };
+
+  // Fork copies the session to a new id — jump to it so the user sees the
+  // branch they just created (and it appears in the sidebar).
+  const handleForked = (newId: string) => {
+    const cwd = cwdRef.current;
+    setPlaceholderView(null);
+    sessionsStore.getState().setCurrent(newId);
+    sessionsStore.getState().upsert({ sessionId: newId, title: "分叉会话", cwd });
+    sessionStore.getState().setSession(newId);
+    void grokLoadSession(newId, cwd).catch((e) =>
+      sessionStore.getState().setError(String(e))
+    );
   };
 
   // Start a new chat guided by an expert/assistant. grok has no session-level
@@ -452,7 +534,7 @@ function Shell() {
       sessionsStore.getState().setCurrent(sessionId);
       sessionsStore.getState().upsert({
         sessionId,
-        title: agent ? agent.name : prompt.slice(0, 30),
+        title: agent ? agent.name : deriveTitle(prompt),
         cwd,
       });
       sessionStore.getState().setSession(sessionId);
@@ -496,8 +578,12 @@ function Shell() {
   const activeNav = placeholderView ?? (currentSessionId ? "" : "新建任务");
 
   return (
-    <div className="app">
-      <TitleBar onPlaceholder={handlePlaceholder} onShowAbout={() => setAboutOpen(true)} />
+    <div className={"app" + (IS_MACOS ? " app--macos" : "")}>
+      {/* macOS 使用系统原生 Overlay 标题栏(红绿灯 + 原生菜单栏),
+          不再渲染自绘 TitleBar;Windows/Linux 保持自绘。 */}
+      {!IS_MACOS && (
+        <TitleBar onPlaceholder={handlePlaceholder} onShowAbout={() => setAboutOpen(true)} />
+      )}
       <div className={"app__body" + (sidebarCollapsed ? " app__body--collapsed" : "")}>
         <Sidebar
           onNewSession={handleNewSession}
@@ -512,7 +598,13 @@ function Shell() {
           activeNav={activeNav}
         />
         <main className="app__main">
-          <header className="main-topbar">
+          {/* 自动化面板的页签工具栏本身就是顶部拖拽条（对齐 WorkBuddy），
+              侧栏展开时隐藏全局 topbar，避免把页签压低 48px。
+              侧栏折叠时保留 topbar（展开/新建任务按钮的唯一直达入口）。
+              注:Tauri 2 只认 data-tauri-drag-region(CSS 的 -webkit-app-region
+              不生效);按钮等子元素不是拖拽目标,不影响点击。 */}
+          {!(placeholderView === "自动化" && !sidebarCollapsed) && (
+          <header className="main-topbar" data-tauri-drag-region>
             <div className="main-topbar__left">
               {sidebarCollapsed && (
                 <>
@@ -539,6 +631,7 @@ function Shell() {
               )}
             </div>
           </header>
+          )}
           {initError ? (
             <div className="app__notice app__notice--err">
               初始化失败:{initError}
@@ -557,6 +650,7 @@ function Shell() {
             <PlaceholderPage
               label={placeholderView}
               onPlaceholder={handlePlaceholder}
+              onNavigate={handleNavigate}
               onStartWithExpert={handleStartWithExpert}
               onToast={showToast}
               cwd={cwdRef.current}
@@ -582,6 +676,9 @@ function Shell() {
               cwd={cwdRef.current}
               workspaces={workspaces}
               onSelectWorkspace={handleSelectWorkspace}
+              onRewound={handleRewound}
+              onForked={handleForked}
+              onToast={showToast}
             />
           ) : (
             <HomePage
@@ -607,7 +704,7 @@ function Shell() {
         onClose={() => setSearchOpen(false)}
         onSelect={handleSelectSession}
       />
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} onModelsChanged={refreshModels} />
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} init={init} />
       <FolderTrustDialog
         request={trustRequest}

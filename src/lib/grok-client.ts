@@ -13,8 +13,12 @@ import type {
   AgentDefaults,
   AgentEntry,
   Automation,
+  ExpertCatalog,
+  AutomationSnapshot,
+  AutomationStatus,
   InspirationStarted,
   LogoutResult,
+  McpConfigFile,
   McpServerEntry,
   McpUpsertRequest,
   MemoryEntry,
@@ -279,6 +283,48 @@ export async function mcpToggle(name: string, enabled: boolean): Promise<void> {
   await invoke<void>("mcp_toggle", { name, enabled });
 }
 
+/** Resolved absolute path of the standalone mcp.json (for the editor header). */
+export async function mcpConfigPath(): Promise<string> {
+  return invoke<string>("mcp_config_path");
+}
+
+/** Read the standalone mcp.json (returns an empty template if missing). */
+export async function mcpConfigRead(): Promise<McpConfigFile> {
+  return invoke<McpConfigFile>("mcp_config_read");
+}
+
+/** Validate + write the standalone mcp.json (best-effort syncs into grok). */
+export async function mcpConfigSave(content: string): Promise<void> {
+  await invoke<void>("mcp_config_save", { content });
+}
+
+// ---------- expert marketplace (live local data dir) ----------
+
+/** First existing candidate data root ("" if none found). */
+export async function expertsDefaultRoot(): Promise<string> {
+  return invoke<string>("experts_default_root");
+}
+
+/** Data roots under `root` that contain the marketplace manifest. */
+export async function expertsListRoots(root: string): Promise<string[]> {
+  return invoke<string[]>("experts_list_roots", { root });
+}
+
+/** Load categories + experts by merging the manifest with each plugin.json. */
+export async function expertsLoad(root?: string): Promise<ExpertCatalog> {
+  return invoke<ExpertCatalog>("experts_load", { root: root ?? null });
+}
+
+/** Small base64 JPEG thumbnail for a local avatar path (cached server-side). */
+export async function expertsThumbnail(path: string): Promise<string> {
+  return invoke<string>("experts_thumbnail", { path });
+}
+
+/** Full-size local image as a `data:` URL (used for 精选场景 banners). */
+export async function expertsImageBytes(path: string): Promise<string> {
+  return invoke<string>("experts_image_bytes", { path });
+}
+
 // ---------- experts / assistants (~/.grok/agents/*.md) ----------
 
 /** List all agent definitions visible to OpenBuddy. */
@@ -471,11 +517,11 @@ export async function internalReload(kind: "mcp_all" | "mcp_project" | "skills" 
   await invoke<void>("internal_reload", { kind });
 }
 
-// ---------- automations (local scheduler) ----------
+// ---------- automations (local scheduler, WorkBuddy 1:1) ----------
 
-/** List all automations. */
-export async function automationsList(): Promise<Automation[]> {
-  return invoke<Automation[]>("automations_list");
+/** Full snapshot: automations (next runs recomputed) + run records. */
+export async function automationsSnapshot(): Promise<AutomationSnapshot> {
+  return invoke<AutomationSnapshot>("automations_snapshot");
 }
 
 /** Create or update an automation. */
@@ -488,14 +534,24 @@ export async function automationsDelete(id: string): Promise<void> {
   await invoke<void>("automations_delete", { id });
 }
 
-/** Toggle an automation active/paused. */
-export async function automationsToggle(id: string, active: boolean): Promise<void> {
-  await invoke<void>("automations_toggle", { id, active });
+/** Set an automation's status ("ACTIVE" | "PAUSED"). */
+export async function automationsSetStatus(id: string, status: AutomationStatus): Promise<void> {
+  await invoke<void>("automations_set_status", { id, status });
 }
 
 /** Manually fire an automation now (test run). Opens a new grok session. */
 export async function automationsRun(id: string): Promise<void> {
   await invoke<void>("automations_run", { id });
+}
+
+/** Archive / unarchive a run record. */
+export async function automationRecordsArchive(id: string, archived: boolean): Promise<void> {
+  await invoke<void>("automation_records_archive", { id, archived });
+}
+
+/** Delete a run record. */
+export async function automationRecordsDelete(id: string): Promise<void> {
+  await invoke<void>("automation_records_delete", { id });
 }
 
 // ---------- inspiration (灵感面板) ----------
