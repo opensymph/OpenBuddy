@@ -32,6 +32,12 @@ test-grok-connection.mjs
 # Documentation
 docs/
 
+# Sensitive certificates / keys
+*.p12
+*.p12.base64
+*.p8
+p12-password.txt
+
 # One-off debugging / inspection scripts under scripts/
 scripts/check-*.js
 scripts/debug-*.js
