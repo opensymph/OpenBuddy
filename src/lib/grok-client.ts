@@ -9,7 +9,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
-  AccountInfo,
   AgentDefaults,
   AgentEntry,
   Automation,
@@ -17,7 +16,6 @@ import type {
   AutomationSnapshot,
   AutomationStatus,
   InspirationStarted,
-  LogoutResult,
   McpConfigFile,
   McpServerEntry,
   McpUpsertRequest,
@@ -33,7 +31,6 @@ import type {
   SessionUpdate,
   SkillInfo,
   SlashCommand,
-  SubscriptionStatus,
 } from "./types";
 
 import type { QuestionRequest } from "@/stores/question-store";
@@ -257,6 +254,30 @@ export async function providersSave(providers: ProviderConfig[]): Promise<void> 
 
 export async function providersDelete(modelId: string): Promise<void> {
   await invoke<void>("providers_delete", { modelId });
+}
+
+/** One model entry returned by a provider's GET /models endpoint. */
+export interface FetchedModel {
+  id: string;
+  ownedBy?: string;
+}
+
+/**
+ * Fetch the list of available models from a provider's `/models` endpoint.
+ * Works for any OpenAI-compatible endpoint and for Anthropic. The `apiKey` is
+ * used only for this request — it is never persisted. Pass `baseUrl` to
+ * override the provider's preset (required for `custom`).
+ */
+export async function providersFetchModels(
+  providerKind: ProviderKind,
+  apiKey: string,
+  baseUrl?: string,
+): Promise<FetchedModel[]> {
+  return invoke<FetchedModel[]>("providers_fetch_models", {
+    providerKind,
+    apiKey,
+    baseUrl: baseUrl ?? null,
+  });
 }
 
 // ---------- skills (x.ai/skills/*) ----------
@@ -590,22 +611,10 @@ export async function inspirationGenerate(
   });
 }
 
-// ---------- account (x.ai/auth/*) ----------
-
-/** Fetch the user's account profile (email, name, team, org, ...). */
-export async function accountInfo(): Promise<AccountInfo> {
-  return invoke<AccountInfo>("account_info");
-}
-
-/** Re-check the subscription/gate state. Returns auth flag + opaque meta. */
-export async function accountCheckSubscription(): Promise<SubscriptionStatus> {
-  return invoke<SubscriptionStatus>("account_check_subscription");
-}
-
-/** Log out of grok OAuth. `scope="all"` revokes all sessions. */
-export async function accountLogout(scope?: string): Promise<LogoutResult> {
-  return invoke<LogoutResult>("account_logout", { scope: scope ?? null });
-}
+// ---------- xAI API Key 管理 (x.ai/getApiKey / x.ai/setApiKey) ----------
+// grok OAuth 账户命令（accountInfo/accountCheckSubscription/accountLogout/
+// accountGetAuthUrl/accountCancelAuth）已随 OAuth 功能移除。OpenBuddy 仅保留
+// xAI API Key（BYOK）认证路径。
 
 /** Get the raw xAI API key (from XAI_API_KEY env / ~/.grok/config). */
 export async function accountGetApiKey(): Promise<string | null> {
@@ -615,20 +624,6 @@ export async function accountGetApiKey(): Promise<string | null> {
 /** Set or clear the xAI API key. Empty/null clears it. */
 export async function accountSetApiKey(key: string | null): Promise<void> {
   await invoke<void>("account_set_api_key", { key });
-}
-
-/** Get the OAuth login URL (blocks until grok has one or reports null). */
-export async function accountGetAuthUrl(): Promise<{
-  authUrl: string | null;
-  externalProvider: boolean;
-  mode: string | null;
-}> {
-  return invoke("account_get_auth_url");
-}
-
-/** Cancel any in-flight interactive login. */
-export async function accountCancelAuth(): Promise<void> {
-  await invoke<void>("account_cancel_auth");
 }
 
 // ---------- agent / assistant defaults (~/.grok/config.toml) ----------
@@ -715,6 +710,16 @@ export async function notificationMarkAllRead(): Promise<void> {
 /** Clear all notifications. */
 export async function notificationClear(): Promise<void> {
   await invoke<void>("notification_clear");
+}
+
+// ---------- export ----------
+
+/** Export text content to an absolute path chosen by the user via the save
+ *  dialog (e.g. "导出会话为 Markdown"). Unlike write_text_file, this is NOT
+ *  restricted to the workspace — the path comes from explicit user consent
+ *  in the native save dialog. */
+export async function exportTextFile(path: string, content: string): Promise<string> {
+  return invoke<string>("export_text_file", { path, content });
 }
 
 // ---------- event subscription ----------

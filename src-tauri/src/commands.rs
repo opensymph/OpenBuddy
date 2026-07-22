@@ -118,8 +118,18 @@ pub async fn grok_init(
         .await
         .map_err(|e| format!("initialize: {e}"))?;
 
-    // Authenticate with the first advertised method (cached_token / xai.api_key).
-    if let Some(method) = init_outcome.auth_methods.first() {
+    // Authenticate ONLY via a BYOK/api_key method. We deliberately never pass
+    // `cached_token`/`grok_com`/`oidc` to `authenticate`, because those fall
+    // through to the in-kernel OIDC/device-code flow which opens the system
+    // browser to x.ai (see vendor auth/oidc/login.rs:423). OpenBuddy is
+    // BYOK-only; if no api_key method is advertised we stay unauthenticated and
+    // let the frontend guide the user to set up a provider/API key instead.
+    const XAI_API_KEY_METHOD_ID: &str = "xai.api_key";
+    if let Some(method) = init_outcome
+        .auth_methods
+        .iter()
+        .find(|m| m == &XAI_API_KEY_METHOD_ID)
+    {
         let _ = grok::authenticate(&tx, method).await;
     }
 
@@ -145,7 +155,11 @@ pub async fn grok_init(
             reason: if ready {
                 None
             } else {
-                Some("No provider configured. Add an API key in Settings.".into())
+                Some(
+                    "No provider configured. Set an xAI API Key in Settings → 账户管理, \
+                     or add a BYOK provider in Settings → 模型."
+                        .into(),
+                )
             },
         },
         cwd: cwd.to_string_lossy().into_owned(),

@@ -327,6 +327,14 @@ export interface RewindPoint {
   promptIndex: number;
   promptPreview?: string;
   timestamp?: string;
+  /** First assistant response snippet (for timeline display). */
+  messagePreview?: string;
+  /** Whether this prompt produced file changes. */
+  hasFileChanges?: boolean;
+  /** Whether this prompt produced memory writes. */
+  hasMemoryChanges?: boolean;
+  /** Tool calls made during this turn. */
+  toolNames?: string[];
 }
 
 // ---------- slash commands + prompt history ----------
@@ -401,40 +409,9 @@ export interface InspirationStarted {
   count: number;
 }
 
-// ---------- account (x.ai/auth/*) ----------
-
-/** Full account profile from grok's `x.ai/auth/info`. */
-export interface AccountInfo {
-  methodId?: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
-  /** `grok-asset://` URL (Electron-only) or `http(s)://`. */
-  profileImageUrl?: string;
-  teamId?: string;
-  teamName?: string;
-  teamRole?: string;
-  organizationId?: string;
-  organizationName?: string;
-  organizationRole?: string;
-  principalType?: string;
-  principalId?: string;
-  userBlockedReason?: string;
-  teamBlockedReasons?: string[];
-  codingDataRetentionOptOut?: boolean;
-}
-
-export interface SubscriptionStatus {
-  authenticated: boolean;
-  meta?: unknown;
-}
-
-export interface LogoutResult {
-  ok: boolean;
-  wasLoggedIn?: boolean;
-  email?: string;
-  apiKeyStillSet?: boolean;
-}
+// ---------- xAI API Key 管理 ----------
+// grok OAuth 账户类型（AccountInfo/SubscriptionStatus/LogoutResult）已随
+// OAuth 功能一并移除；OpenBuddy 现仅保留 xAI API Key（BYOK）认证。
 
 // ---------- agent / assistant defaults (~/.grok/config.toml) ----------
 

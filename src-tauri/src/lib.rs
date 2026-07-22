@@ -55,6 +55,7 @@ pub fn run() {
             providers::providers_list,
             providers::providers_save,
             providers::providers_delete,
+            providers::providers_fetch_models,
             // default permission rules (~/.grok/config.toml [permission])
             permission_config::permission_list,
             permission_config::permission_save,
@@ -108,13 +109,8 @@ pub fn run() {
             grok_admin::toggle_plan_mode,
             grok_admin::internal_reload,
             grok_admin::inspiration_generate,
-            grok_admin::account_info,
-            grok_admin::account_check_subscription,
-            grok_admin::account_logout,
             grok_admin::account_get_api_key,
             grok_admin::account_set_api_key,
-            grok_admin::account_get_auth_url,
-            grok_admin::account_cancel_auth,
             grok_admin::plugins_list,
             grok_admin::plugins_action,
             grok_admin::marketplace_list,
@@ -140,6 +136,7 @@ pub fn run() {
             shell_fs::path_stat,
             shell_fs::read_text_file,
             shell_fs::write_text_file,
+            shell_fs::export_text_file,
             shell_fs::browse_directory,
         ])
         .run(tauri::generate_context!())

@@ -12,6 +12,8 @@ import { SearchOverlay } from "./components/SearchOverlay";
 import { AboutDialog } from "./components/AboutDialog";
 import { FolderTrustDialog } from "./components/FolderTrustDialog";
 import { TasksPanel } from "./components/TasksPanel";
+import { SecondarySidebar } from "./components/SecondarySidebar";
+import { TopbarActions } from "./components/TopbarActions";
 import { SidebarToggleIcon, WbNewTaskIcon } from "./foundation/components/Icon/icons";
 import type { ModelOption } from "./components/ModelSelector";
 import { useSessionStore } from "./stores/session-store";
@@ -725,6 +727,17 @@ function Shell() {
                   </>
                 )}
                 <TopbarTitle title={currentTitle} onRename={handleRenameTitle} />
+                {currentSessionId && (
+                  <TopbarActions
+                    sessionId={currentSessionId}
+                    title={currentTitle}
+                    pinned={currentEntry?.pinned}
+                    onToast={showToast}
+                    onSessionsChanged={(patch) => {
+                      if (patch) sessionsStore.getState().upsert({ sessionId: currentSessionId, ...patch });
+                    }}
+                  />
+                )}
               </div>
             </header>
           ) : (
@@ -753,7 +766,7 @@ function Shell() {
             <div className="app__notice app__notice--err">
               初始化失败:{initError}
               <br />
-              请确认已在终端运行 <code>grok login</code> 完成 grok 登录后重试。
+              请在「设置 → 账户管理」设置 xAI API Key，或在「设置 → 模型」配置 BYOK provider 后重试。
             </div>
           ) : !init ? (
             <div className="app__notice">正在本地初始化 agent…</div>
@@ -761,7 +774,7 @@ function Shell() {
             <div className="app__notice app__notice--err">
               grok 未就绪:{init.auth.reason ?? "未知原因"}
               <br />
-              请在终端运行 <code>grok login</code> 后重启 OpenBuddy。
+              请在「设置 → 账户管理」设置 xAI API Key，或在「设置 → 模型」配置 BYOK provider。
             </div>
           ) : placeholderView ? (
             <PlaceholderPage
@@ -833,6 +846,7 @@ function Shell() {
         onToast={showToast}
       />
       <TasksPanel refreshSignal={taskRefreshSignal} onToast={showToast} />
+      <SecondarySidebar onSelectExpert={handleStartWithExpert} onToast={showToast} />
     </div>
   );
 }

@@ -31,10 +31,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import {
-  accountCheckSubscription,
   accountGetApiKey,
-  accountInfo,
-  accountLogout,
   accountSetApiKey,
   agentsDefaultsGet,
   agentsDefaultsSave,
@@ -56,7 +53,6 @@ import {
   type ProviderConfig,
 } from "@/lib/grok-client";
 import type {
-  AccountInfo,
   AgentDefaults,
   AgentEntry,
   McpServerEntry,
@@ -65,7 +61,6 @@ import type {
   PermissionRule,
   SkillInfo,
   SlashCommand,
-  SubscriptionStatus,
 } from "@/lib/types";
 
 const FONT_KEY = "openbuddy.fontSize";
@@ -438,9 +433,7 @@ export function GeneralSettingsPanel() {
 
 export function AccountSettingsPanel() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
-  const [info, setInfo] = useState<AccountInfo | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [subStatus, setSubStatus] = useState<SubscriptionStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -452,16 +445,12 @@ export function AccountSettingsPanel() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [a, i, k, s] = await Promise.all([
+      const [a, k] = await Promise.all([
         grokAuthStatus().catch(() => null),
-        accountInfo().catch(() => null),
         accountGetApiKey().catch(() => null),
-        accountCheckSubscription().catch(() => null),
       ]);
       setAuth(a);
-      setInfo(i);
       setApiKey(k);
-      setSubStatus(s);
     } finally {
       setLoading(false);
     }
@@ -470,37 +459,6 @@ export function AccountSettingsPanel() {
   useEffect(() => {
     reload();
   }, [reload]);
-
-  const handleLogout = async () => {
-    if (!confirm("确定登出 grok？这将清除本地的 OAuth 凭据（~/.grok/auth.json）。")) return;
-    setBusy(true);
-    try {
-      const result = await accountLogout();
-      setMsg(
-        result.wasLoggedIn
-          ? `已登出${result.email ? `（${result.email}）` : ""}`
-          : "原本就未登录",
-      );
-      reload();
-    } catch (e) {
-      setMsg(`登出失败：${String(e).replace(/^Error:\s*/, "")}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleRefreshSubscription = async () => {
-    setBusy(true);
-    try {
-      const s = await accountCheckSubscription();
-      setSubStatus(s);
-      setMsg(s.authenticated ? "订阅检查通过 ✓" : "未通过订阅检查");
-    } catch (e) {
-      setMsg(`订阅检查失败：${String(e).replace(/^Error:\s*/, "")}`);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const handleSaveKey = async () => {
     setBusy(true);
@@ -531,113 +489,17 @@ export function AccountSettingsPanel() {
     }
   };
 
-  const fullName = [info?.firstName, info?.lastName].filter(Boolean).join(" ");
   const maskedKey = apiKey ? maskKey(apiKey) : null;
 
   return (
     <SectionShell
-      title="账户管理"
-      desc="grok 账户凭据、订阅状态和 API Key 管理。所有操作通过 grok 的 x.ai/auth/* 接口完成。"
+      title="API Key 管理"
+      desc="xAI API Key（BYOK 认证）。无需浏览器登录 x.ai；设置 Key 或在「模型」tab 配置 BYOK provider 即可使用。"
     >
       {loading ? (
         <p className="settings-hint">加载中…</p>
       ) : (
         <>
-          {/* 用户信息卡片 */}
-          {info && (info.email || fullName) && (
-            <div className="account-card">
-              {info.profileImageUrl && (
-                <img
-                  className="account-card__avatar"
-                  src={info.profileImageUrl}
-                  alt={fullName || info.email || "avatar"}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              )}
-              <div className="account-card__body">
-                {fullName && (
-                  <div className="account-card__name">{fullName}</div>
-                )}
-                {info.email && (
-                  <div className="account-card__email">{info.email}</div>
-                )}
-                {info.methodId && (
-                  <div className="account-card__method">
-                    认证方式：<code>{info.methodId}</code>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* 认证状态 */}
-          <div className="settings-row">
-            <div className="settings-row__label">
-              <Shield size={16} />
-              <span>OAuth 认证</span>
-            </div>
-            <div className="settings-row__control">
-              {auth?.hasAuthFile ? (
-                <span className="settings-ok">✓ auth.json 存在</span>
-              ) : (
-                <span className="settings-warn">⚠ 未登录</span>
-              )}
-            </div>
-          </div>
-
-          {/* 团队 / 组织 */}
-          {info?.teamName && (
-            <div className="settings-row">
-              <div className="settings-row__label">
-                <span>团队</span>
-              </div>
-              <div className="settings-row__control">
-                {info.teamName}
-                {info.teamRole ? ` · ${info.teamRole}` : ""}
-              </div>
-            </div>
-          )}
-          {info?.organizationName && (
-            <div className="settings-row">
-              <div className="settings-row__label">
-                <span>组织</span>
-              </div>
-              <div className="settings-row__control">
-                {info.organizationName}
-                {info.organizationRole ? ` · ${info.organizationRole}` : ""}
-              </div>
-            </div>
-          )}
-
-          {/* 订阅状态 */}
-          <div className="settings-row">
-            <div className="settings-row__label">
-              <RefreshCw size={16} />
-              <span>订阅状态</span>
-            </div>
-            <div className="settings-row__control">
-              {subStatus?.authenticated ? (
-                <span className="settings-ok">✓ 已认证</span>
-              ) : (
-                <span className="settings-warn">⚠ 未认证</span>
-              )}
-            </div>
-          </div>
-
-          {/* 封锁原因（如有） */}
-          {info?.userBlockedReason && (
-            <p className="settings-msg settings-msg--warn">
-              账户被封锁：{info.userBlockedReason}
-            </p>
-          )}
-          {info?.teamBlockedReasons && info.teamBlockedReasons.length > 0 && (
-            <p className="settings-msg settings-msg--warn">
-              团队封锁：{info.teamBlockedReasons.join("; ")}
-            </p>
-          )}
-
           {/* BYOK providers */}
           {auth && auth.providers.length > 0 && (
             <div className="settings-row">
@@ -735,46 +597,11 @@ export function AccountSettingsPanel() {
             </p>
           </div>
 
-          {/* 操作按钮 */}
-          <div className="settings-actions">
-            <button
-              className="settings-btn"
-              onClick={handleRefreshSubscription}
-              disabled={busy}
-            >
-              <RefreshCw size={14} /> 刷新订阅
-            </button>
-            <button
-              className="settings-btn settings-btn--danger"
-              onClick={handleLogout}
-              disabled={busy}
-            >
-              <Trash2 size={14} /> 登出 OAuth
-            </button>
-          </div>
-
           {msg && <p className="settings-msg">{msg}</p>}
-
-          {/* 训练数据 opt-out 状态 */}
-          {info && (
-            <div className="settings-row">
-              <div className="settings-row__label">
-                <Shield size={16} />
-                <span>训练数据 opt-out</span>
-              </div>
-              <div className="settings-row__control">
-                {info.codingDataRetentionOptOut ? (
-                  <span className="settings-ok">✓ 已 opt-out</span>
-                ) : (
-                  <span className="settings-warn">未 opt-out</span>
-                )}
-              </div>
-            </div>
-          )}
 
           {!auth?.ready && (
             <p className="settings-hint">
-              未就绪。请在终端运行 <code>grok login</code>，或设置 API Key，或在「模型」tab 配置 BYOK provider。
+              未就绪。请设置 xAI API Key，或在「模型」tab 配置 BYOK provider。
             </p>
           )}
         </>

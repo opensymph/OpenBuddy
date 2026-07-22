@@ -308,6 +308,18 @@ pub struct RewindPoint {
     pub prompt_index: u32,
     pub prompt_preview: Option<String>,
     pub timestamp: Option<String>,
+    /// First assistant response snippet (for timeline display).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_preview: Option<String>,
+    /// Whether this prompt produced file changes (for badge display).
+    #[serde(default)]
+    pub has_file_changes: bool,
+    /// Whether this prompt produced memory writes (for badge display).
+    #[serde(default)]
+    pub has_memory_changes: bool,
+    /// Tool calls made during this turn (for timeline detail).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_names: Option<Vec<String>>,
 }
 
 /// List the prompts a session can rewind to.
@@ -331,22 +343,57 @@ pub async fn rewind_points(
     let Some(arr) = arr else { return Ok(Vec::new()); };
     Ok(arr
         .iter()
-        .map(|item| serde_json::from_value::<RewindPoint>(item.clone()).unwrap_or(RewindPoint {
-            prompt_index: item
-                .get("promptIndex")
-                .or_else(|| item.get("prompt_index"))
-                .and_then(|n| n.as_u64())
-                .unwrap_or(0) as u32,
-            prompt_preview: item
-                .get("promptPreview")
-                .or_else(|| item.get("prompt_preview"))
-                .and_then(|s| s.as_str())
-                .map(String::from),
-            timestamp: item
-                .get("timestamp")
-                .and_then(|s| s.as_str())
-                .map(String::from),
-        }))
+        .map(|item| {
+            serde_json::from_value::<RewindPoint>(item.clone()).unwrap_or_else(|_| {
+                let prompt_index = item
+                    .get("promptIndex")
+                    .or_else(|| item.get("prompt_index"))
+                    .and_then(|n| n.as_u64())
+                    .unwrap_or(0) as u32;
+                let prompt_preview = item
+                    .get("promptPreview")
+                    .or_else(|| item.get("prompt_preview"))
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                let timestamp = item
+                    .get("timestamp")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                let message_preview = item
+                    .get("messagePreview")
+                    .or_else(|| item.get("message_preview"))
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                let has_file_changes = item
+                    .get("hasFileChanges")
+                    .or_else(|| item.get("has_file_changes"))
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false);
+                let has_memory_changes = item
+                    .get("hasMemoryChanges")
+                    .or_else(|| item.get("has_memory_changes"))
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false);
+                let tool_names = item
+                    .get("toolNames")
+                    .or_else(|| item.get("tool_names"))
+                    .and_then(|a| a.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    });
+                RewindPoint {
+                    prompt_index,
+                    prompt_preview,
+                    timestamp,
+                    message_preview,
+                    has_file_changes,
+                    has_memory_changes,
+                    tool_names,
+                }
+            })
+        })
         .collect())
 }
 
@@ -845,131 +892,14 @@ pub struct InspirationStarted {
 }
 
 // ========================================================================
-// Account (x.ai/auth/*) — 账户管理
+// xAI API Key 管理 — grok 的 `x.ai/getApiKey` / `x.ai/setApiKey`
+//
+// OpenBuddy 只支持 BYOK 认证（xAI API Key / config.toml 里的 [model.*]
+// api_key/env_key）。grok OAuth 登录（x.ai/auth/info、check_subscription、
+// logout、get_url、cancel）相关的 command 已移除，以避免内核在空配置时
+// fallthrough 到 OIDC 并打开浏览器跳转 x.ai。详见 commands.rs 里
+// `grok_init` 的认证选择逻辑。
 // ========================================================================
-
-/// Full account info as returned by grok's `x.ai/auth/info`, plus a few
-/// convenience fields pulled from other auth methods. The shape mirrors the
-/// grok handler's `AuthInfoResponse` (`extensions/auth.rs:184`).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct AccountInfo {
-    #[serde(default)]
-    pub method_id: Option<String>,
-    #[serde(default)]
-    pub email: Option<String>,
-    #[serde(default)]
-    pub first_name: Option<String>,
-    #[serde(default)]
-    pub last_name: Option<String>,
-    /// `grok-asset://` or `http(s)://` URL; the frontend may not be able to
-    /// resolve the `grok-asset://` scheme (that's an Electron handler), so
-    /// we surface it raw and let the UI decide.
-    #[serde(default)]
-    pub profile_image_url: Option<String>,
-    #[serde(default)]
-    pub team_id: Option<String>,
-    #[serde(default)]
-    pub team_name: Option<String>,
-    #[serde(default)]
-    pub team_role: Option<String>,
-    #[serde(default)]
-    pub organization_id: Option<String>,
-    #[serde(default)]
-    pub organization_name: Option<String>,
-    #[serde(default)]
-    pub organization_role: Option<String>,
-    #[serde(default)]
-    pub principal_type: Option<String>,
-    #[serde(default)]
-    pub principal_id: Option<String>,
-    #[serde(default)]
-    pub user_blocked_reason: Option<String>,
-    #[serde(default)]
-    pub team_blocked_reasons: Vec<String>,
-    #[serde(default)]
-    pub coding_data_retention_opt_out: bool,
-}
-
-/// Subscription check result. `meta` is opaque (grok-specific gate info).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct SubscriptionStatus {
-    #[serde(default)]
-    pub authenticated: bool,
-    /// Raw grok meta object (subscription tier, quota, etc.). Kept as
-    /// `Value` since the shape varies by grok version.
-    #[serde(default)]
-    pub meta: Option<serde_json::Value>,
-}
-
-/// Logout result from grok's `x.ai/auth/logout`.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct LogoutResult {
-    pub ok: bool,
-    #[serde(default)]
-    pub was_logged_in: bool,
-    #[serde(default)]
-    pub email: Option<String>,
-    #[serde(default)]
-    pub api_key_still_set: bool,
-}
-
-/// Fetch the user's account profile via `x.ai/auth/info`.
-#[tauri::command]
-pub async fn account_info(state: State<'_, AppState>) -> Result<AccountInfo, String> {
-    let tx = state
-        .tx
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or("agent not initialized")?;
-    let params = raw_params(&serde_json::json!({}));
-    let v: AccountInfo = call_ext(&tx, "x.ai/auth/info", params)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(v)
-}
-
-/// Re-check the subscription/gate state via `x.ai/auth/check_subscription`.
-#[tauri::command]
-pub async fn account_check_subscription(
-    state: State<'_, AppState>,
-) -> Result<SubscriptionStatus, String> {
-    let tx = state
-        .tx
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or("agent not initialized")?;
-    let params = raw_params(&serde_json::json!({}));
-    let v: SubscriptionStatus = call_ext(&tx, "x.ai/auth/check_subscription", params)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(v)
-}
-
-/// Log out of grok OAuth via `x.ai/auth/logout`. `scope` is optional (e.g.
-/// "all" to revoke all sessions); None logs out the current session.
-/// Returns whether the user was actually logged in + their email.
-#[tauri::command]
-pub async fn account_logout(
-    state: State<'_, AppState>,
-    scope: Option<String>,
-) -> Result<LogoutResult, String> {
-    let tx = state
-        .tx
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or("agent not initialized")?;
-    let params = raw_params(&serde_json::json!({ "scope": scope }));
-    let v: LogoutResult = call_ext(&tx, "x.ai/auth/logout", params)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(v)
-}
 
 /// Get the current xAI API key via `x.ai/getApiKey`. The key is returned
 /// raw (unmasked) — the frontend decides whether to mask on display.
@@ -1003,40 +933,6 @@ pub async fn account_set_api_key(
         .ok_or("agent not initialized")?;
     let params = raw_params(&serde_json::json!({ "key": key.unwrap_or_default() }));
     let _: serde_json::Value = call_ext(&tx, "x.ai/setApiKey", params)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Get the OAuth login URL via `x.ai/auth/get_url`. This blocks until grok
-/// has a URL ready (or reports null when no login is in flight). Used by the
-/// "login with browser" flow.
-#[tauri::command]
-pub async fn account_get_auth_url(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let tx = state
-        .tx
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or("agent not initialized")?;
-    let params = raw_params(&serde_json::json!({}));
-    let v: serde_json::Value = call_ext(&tx, "x.ai/auth/get_url", params)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(v)
-}
-
-/// Cancel any in-flight interactive login (`x.ai/auth/cancel`).
-#[tauri::command]
-pub async fn account_cancel_auth(state: State<'_, AppState>) -> Result<(), String> {
-    let tx = state
-        .tx
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or("agent not initialized")?;
-    let params = raw_params(&serde_json::json!({}));
-    let _: serde_json::Value = call_ext(&tx, "x.ai/auth/cancel", params)
         .await
         .map_err(|e| e.to_string())?;
     Ok(())
