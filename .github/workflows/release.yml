@@ -16,6 +16,8 @@ permissions:
 
 env:
   APP_NAME: OpenBuddy
+  # Align with vendor/grok-build/bin/protoc (dotslash lockfile).
+  PROTOC_VERSION: "29.3"
 
 jobs:
   build-windows:
@@ -30,7 +32,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 20 is deprecated on GitHub-hosted runners; 22 is LTS.
+          node-version: 22
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -40,11 +43,43 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      # Avoid arduino/setup-protoc — it hits the GitHub Releases API and flakily
+      # times out ("We couldn't respond to your request in time"). Download the
+      # release asset directly with retries instead.
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: '28.x'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${PROTOC_VERSION}"
+          ASSET="protoc-${VER}-win64.zip"
+          URL="https://github.com/protocolbuffers/protobuf/releases/download/v${VER}/${ASSET}"
+          DEST="${RUNNER_TEMP}/protoc"
+          mkdir -p "$DEST"
+          echo "Downloading ${URL}"
+          for i in 1 2 3 4 5; do
+            if curl -fsSL --retry 3 --retry-delay 2 -o "${DEST}/${ASSET}" "$URL"; then
+              break
+            fi
+            echo "download attempt $i failed; sleeping..."
+            sleep $((i * 3))
+            if [[ $i -eq 5 ]]; then
+              echo "failed to download protoc after 5 attempts"
+              exit 1
+            fi
+          done
+          python - <<PY
+          import zipfile, pathlib
+          dest = pathlib.Path(r"""${DEST}""")
+          z = dest / "${ASSET}"
+          with zipfile.ZipFile(z) as zf:
+              zf.extractall(dest)
+          print("extracted to", dest)
+          PY
+          PROTOC_BIN="${DEST}/bin/protoc.exe"
+          test -f "$PROTOC_BIN"
+          echo "${DEST}/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=${PROTOC_BIN}" >> "$GITHUB_ENV"
+          "$PROTOC_BIN" --version
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -93,7 +128,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -104,10 +139,39 @@ jobs:
         run: pnpm install
 
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: '28.x'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${PROTOC_VERSION}"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            arm64|aarch64) PLATFORM="osx-aarch_64" ;;
+            x86_64|amd64)  PLATFORM="osx-x86_64" ;;
+            *) echo "unsupported arch: $ARCH"; exit 1 ;;
+          esac
+          ASSET="protoc-${VER}-${PLATFORM}.zip"
+          URL="https://github.com/protocolbuffers/protobuf/releases/download/v${VER}/${ASSET}"
+          DEST="${RUNNER_TEMP}/protoc"
+          mkdir -p "$DEST"
+          echo "Downloading ${URL}"
+          for i in 1 2 3 4 5; do
+            if curl -fsSL --retry 3 --retry-delay 2 -o "${DEST}/${ASSET}" "$URL"; then
+              break
+            fi
+            echo "download attempt $i failed; sleeping..."
+            sleep $((i * 3))
+            if [[ $i -eq 5 ]]; then
+              echo "failed to download protoc after 5 attempts"
+              exit 1
+            fi
+          done
+          unzip -qo "${DEST}/${ASSET}" -d "$DEST"
+          PROTOC_BIN="${DEST}/bin/protoc"
+          chmod +x "$PROTOC_BIN"
+          test -x "$PROTOC_BIN"
+          echo "${DEST}/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=${PROTOC_BIN}" >> "$GITHUB_ENV"
+          "$PROTOC_BIN" --version
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
