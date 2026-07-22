@@ -14,7 +14,9 @@
     "dist:mac": "bash scripts/build.sh",
     "setup:win": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
     "setup:mac": "bash scripts/setup.sh",
-    "test": "vitest run"
+    "test": "vitest run",
+    "git:push": "bash scripts/git-push.sh",
+    "git:push:tags": "bash scripts/git-push.sh --tags"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
