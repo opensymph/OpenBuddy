@@ -212,3 +212,85 @@ pub fn notification_mark_all_read(_state: State<'_, AppState>) -> Result<(), Str
 pub fn notification_clear(_state: State<'_, AppState>) -> Result<(), String> {
     write_store(&NotificationStore::default())
 }
+
+// ---------- unit tests ----------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- NotificationKind::from_str ---
+
+    #[test]
+    fn kind_from_str_known_variants() {
+        assert!(matches!(NotificationKind::from_str("permission"), NotificationKind::Permission));
+        assert!(matches!(NotificationKind::from_str("folder_trust"), NotificationKind::FolderTrust));
+        assert!(matches!(NotificationKind::from_str("folder-trust"), NotificationKind::FolderTrust));
+        assert!(matches!(NotificationKind::from_str("task_update"), NotificationKind::TaskUpdate));
+        assert!(matches!(NotificationKind::from_str("task-update"), NotificationKind::TaskUpdate));
+        assert!(matches!(NotificationKind::from_str("plan_mode"), NotificationKind::PlanMode));
+        assert!(matches!(NotificationKind::from_str("plan-mode"), NotificationKind::PlanMode));
+        assert!(matches!(NotificationKind::from_str("mcp_status"), NotificationKind::McpStatus));
+        assert!(matches!(NotificationKind::from_str("mcp-status"), NotificationKind::McpStatus));
+        assert!(matches!(NotificationKind::from_str("models_update"), NotificationKind::ModelsUpdate));
+        assert!(matches!(NotificationKind::from_str("models-update"), NotificationKind::ModelsUpdate));
+        assert!(matches!(NotificationKind::from_str("summary"), NotificationKind::Summary));
+        assert!(matches!(NotificationKind::from_str("session_complete"), NotificationKind::SessionComplete));
+        assert!(matches!(NotificationKind::from_str("complete"), NotificationKind::SessionComplete));
+        assert!(matches!(NotificationKind::from_str("error"), NotificationKind::Error));
+    }
+
+    #[test]
+    fn kind_from_str_unknown_falls_back_to_info() {
+        assert!(matches!(NotificationKind::from_str("unknown"), NotificationKind::Info));
+        assert!(matches!(NotificationKind::from_str(""), NotificationKind::Info));
+        assert!(matches!(NotificationKind::from_str("PERMISSION"), NotificationKind::Info));
+    }
+
+    // --- default_severity ---
+
+    #[test]
+    fn default_severity_is_info() {
+        assert_eq!(default_severity(), "info");
+    }
+
+    // --- NotificationStore serde ---
+
+    #[test]
+    fn store_default_is_empty() {
+        let store = NotificationStore::default();
+        assert!(store.entries.is_empty());
+    }
+
+    #[test]
+    fn entry_serde_roundtrip() {
+        let entry = NotificationEntry {
+            id: 42,
+            kind: NotificationKind::Permission,
+            at: "2026-07-01T10:00:00+08:00".into(),
+            title: "Test notification".into(),
+            body: Some("details".into()),
+            session_id: Some("sess-1".into()),
+            severity: "warn".into(),
+            read: false,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let parsed: NotificationEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, 42);
+        assert_eq!(parsed.title, "Test notification");
+        assert_eq!(parsed.severity, "warn");
+        assert!(!parsed.read);
+    }
+
+    #[test]
+    fn entry_deserialize_defaults() {
+        // Missing optional fields should use defaults.
+        // Note: serde rename_all = "camelCase" so variant is "info" not "Info".
+        let json = r#"{"id":1,"kind":"info","at":"2026-01-01","title":"hi"}"#;
+        let entry: NotificationEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.severity, "info");
+        assert!(!entry.read);
+        assert!(entry.body.is_none());
+        assert!(entry.session_id.is_none());
+    }
+}

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SessionSummary } from "@/lib/types";
+import type { SessionSummary, SessionStatus } from "@/lib/types";
 import type { WorkspaceInfo } from "@/lib/grok-client";
 
 /**
@@ -49,6 +49,10 @@ interface SessionsState {
   error: string | null;
   /** Search query for the session search overlay (empty = no filter). */
   query: string;
+  /** Sidebar task filter: selected status (null = 全部状态). */
+  filterStatus: SessionStatus | null;
+  /** Sidebar task filter: selected date range (null = 全部时间). */
+  filterDate: string | null;
   /**
    * Per-session Composer drafts (unsent textarea text), keyed by sessionId.
    * UI-only state: grok has no concept of "user hasn't pressed send yet", so
@@ -70,6 +74,9 @@ interface SessionsState {
   setError: (e: string | null) => void;
   setCurrent: (id: string | null) => void;
   setQuery: (q: string) => void;
+  setFilterStatus: (s: SessionStatus | null) => void;
+  setFilterDate: (d: string | null) => void;
+  clearFilters: () => void;
   /** Save the draft for one session id. Empty string deletes the entry so
    *  the map stays tidy and `drafts[id] ?? ""` always reflects truth. */
   setDraft: (id: string, text: string) => void;
@@ -84,6 +91,11 @@ interface SessionsState {
   remove: (id: string) => void;
 }
 
+/** Returns true when any sidebar task filter is active. */
+export function selectHasFilter(s: { filterStatus: SessionStatus | null; filterDate: string | null }): boolean {
+  return s.filterStatus !== null || s.filterDate !== null;
+}
+
 export const useSessionsStore = create<SessionsState>((set) => ({
   independent: [],
   workspaces: [],
@@ -96,6 +108,8 @@ export const useSessionsStore = create<SessionsState>((set) => ({
   loading: false,
   error: null,
   query: "",
+  filterStatus: null,
+  filterDate: null,
   drafts: {},
 
   setIndependent: (independent) => set({ independent }),
@@ -113,6 +127,9 @@ export const useSessionsStore = create<SessionsState>((set) => ({
   setError: (error) => set({ error }),
   setCurrent: (id) => set({ currentSessionId: id }),
   setQuery: (query) => set({ query }),
+  setFilterStatus: (filterStatus) => set({ filterStatus }),
+  setFilterDate: (filterDate) => set({ filterDate }),
+  clearFilters: () => set({ filterStatus: null, filterDate: null }),
   setDraft: (id, text) =>
     set((state) => {
       // Avoid a new object reference when nothing changes (no text + absent).

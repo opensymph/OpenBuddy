@@ -243,3 +243,83 @@ pub async fn browse_directory(path: String) -> Result<(), String> {
     };
     open::that(target).map_err(|e| format!("打开目录失败：{e}"))
 }
+
+// ---------- unit tests ----------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- resolve_path ---
+
+    #[test]
+    fn resolve_absolute_path_passthrough() {
+        #[cfg(windows)]
+        {
+            let result = resolve_path("C:\\Users\\test\\file.txt", None);
+            assert_eq!(result, PathBuf::from("C:\\Users\\test\\file.txt"));
+        }
+        #[cfg(unix)]
+        {
+            let result = resolve_path("/home/user/file.txt", None);
+            assert_eq!(result, PathBuf::from("/home/user/file.txt"));
+        }
+    }
+
+    #[test]
+    fn resolve_relative_with_cwd() {
+        let result = resolve_path("src/main.rs", Some("/home/project"));
+        assert_eq!(result, PathBuf::from("/home/project/src/main.rs"));
+    }
+
+    #[test]
+    fn resolve_relative_without_cwd() {
+        let result = resolve_path("src/main.rs", None);
+        assert_eq!(result, PathBuf::from("src/main.rs"));
+    }
+
+    #[test]
+    fn resolve_relative_with_empty_cwd() {
+        let result = resolve_path("src/main.rs", Some(""));
+        assert_eq!(result, PathBuf::from("src/main.rs"));
+    }
+
+    // --- ensure_under_workspace ---
+
+    #[test]
+    fn ensure_under_workspace_allows_child() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let child = root.join("sub/file.txt");
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(&child, "hello").unwrap();
+
+        let result = ensure_under_workspace(root, &child);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), child.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn ensure_under_workspace_rejects_outside() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let outside = tmp.path().join("outside.txt");
+        std::fs::write(&outside, "evil").unwrap();
+
+        let result = ensure_under_workspace(&root, &outside);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("拒绝写入工作区之外"));
+    }
+
+    #[test]
+    fn ensure_under_workspace_new_file_in_existing_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let new_file = root.join("new_file.txt");
+        // File doesn't exist yet, but parent (root) does.
+        let result = ensure_under_workspace(root, &new_file);
+        assert!(result.is_ok());
+    }
+}

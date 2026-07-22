@@ -1,6 +1,6 @@
 [package]
 name = "openbuddy"
-version = "0.4.1"
+version = "0.5.0"
 description = "OpenBuddy — a WorkBuddy-style desktop shell for the grok agent"
 authors = ["OpenBuddy"]
 edition = "2021"
@@ -44,6 +44,9 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 base64 = "0.22"
 # Open URLs / local paths with the OS default handler (markdown links & paths).
 open = "5"
+
+[dev-dependencies]
+tempfile = "3"
 
 # Dev profile - enable debug info and use safer optimization
 [profile.dev]

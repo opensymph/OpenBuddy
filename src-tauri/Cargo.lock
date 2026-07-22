@@ -6744,7 +6744,7 @@ dependencies = [
 
 [[package]]
 name = "openbuddy"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -6758,6 +6758,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "tempfile",
  "tokio",
  "tokio-util",
  "toml 0.8.2",

@@ -26,17 +26,29 @@ interface ProjectsPanelProps {
   onSelectWorkspace?: (cwd: string) => void;
   onToast?: (msg: string) => void;
   onStartProject?: (project: ProjectMeta) => void;
+  /** Start a new conversation within a project (creates a real grok session). */
+  onStartProjectConversation?: (projectId: string, message: string) => void;
 }
 
 const FROM_TEMPLATES = TEMPLATE_OPTIONS.filter((t) => t.id !== "custom");
 
-export function ProjectsPanel({ onToast }: ProjectsPanelProps) {
+export function ProjectsPanel({ onToast, onStartProjectConversation }: ProjectsPanelProps) {
   const projects = useProjectsStore((s) => s.projects);
   const rename = useProjectsStore((s) => s.rename);
   const remove = useProjectsStore((s) => s.remove);
+  const activeProjectId = useProjectsStore((s) => s.activeProjectId);
+  const setActiveProjectId = useProjectsStore((s) => s.setActiveProjectId);
   const [query, setQuery] = useState("");
   const [create, setCreate] = useState<CreatePreset | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+
+  // Auto-open a project when navigated from the sidebar.
+  useEffect(() => {
+    if (activeProjectId) {
+      setOpenId(activeProjectId);
+      setActiveProjectId(null);
+    }
+  }, [activeProjectId, setActiveProjectId]);
 
   const filtered = projects.filter((p) =>
     p.name.toLowerCase().includes(query.toLowerCase()),
@@ -44,7 +56,14 @@ export function ProjectsPanel({ onToast }: ProjectsPanelProps) {
 
   const openProject = projects.find((p) => p.id === openId) ?? null;
   if (openProject) {
-    return <ProjectDetailView project={openProject} onBack={() => setOpenId(null)} onToast={onToast} />;
+    return (
+      <ProjectDetailView
+        project={openProject}
+        onBack={() => setOpenId(null)}
+        onToast={onToast}
+        onStartConversation={onStartProjectConversation}
+      />
+    );
   }
 
   const handleRename = (p: ProjectMeta) => {

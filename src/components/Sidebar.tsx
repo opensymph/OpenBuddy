@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { useSessionsStore } from "@/stores/sessions-store";
+import { useSessionsStore, selectHasFilter } from "@/stores/sessions-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { IS_MACOS } from "@/lib/platform";
 import {
@@ -8,7 +8,7 @@ import {
   grokSetSessionPinned,
   grokSetSessionArchived,
 } from "@/lib/grok-client";
-import type { SessionSummary } from "@/lib/types";
+import type { SessionSummary, SessionStatus } from "@/lib/types";
 import {
   WbNewTaskIcon,
   WbAssistantNavIcon,
@@ -30,6 +30,7 @@ import {
   ArchiveIcon,
   WbPinIcon,
   WbUnpinIcon,
+  AddIcon,
   MyFilesIconV2,
   MoreMenuImaKnowledgeIcon,
   MoreMenuInspirationIcon,
@@ -95,6 +96,140 @@ function ProjectNodeIcon() {
       <circle cx="12" cy="17.5" r="2.2" stroke="currentColor" strokeWidth="1.6" />
       <path d="M7.7 8.4 10.5 15.6M16.3 8.4 13.5 15.6M8 7h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
+  );
+}
+
+// ---------- Task filter (对齐 WorkBuddy TaskFilterMenu) ----------
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const STATUS_OPTIONS: { value: SessionStatus | null; label: string }[] = [
+  { value: null,        label: "全部状态" },
+  { value: "working",   label: "进行中" },
+  { value: "completed", label: "已完成" },
+  { value: "failed",    label: "失败" },
+  { value: "pending",   label: "待处理" },
+  { value: "planning",  label: "规划中" },
+];
+
+const DATE_OPTIONS: { value: string | null; label: string }[] = [
+  { value: null,           label: "全部时间" },
+  { value: "today",        label: "今天" },
+  { value: "last7days",    label: "最近 7 天" },
+  { value: "last30days",   label: "最近 30 天" },
+];
+
+/** Green checkmark shown on the selected filter option. */
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path fill="#00C29A" transform="translate(2.676 3.976)"
+        d="M11.3137 0.9428L4.2426 8.0139L0 3.7712L0.9428 2.8284L4.2426 6.1283L10.3709 0L11.3137 0.9428Z" />
+    </svg>
+  );
+}
+
+/** Date preset → start-of-range timestamp (ms). null = no date filter. */
+function getDateStart(date: string | null): number | null {
+  if (!date) return null;
+  if (date === "today") { const s = new Date(); s.setHours(0, 0, 0, 0); return s.getTime(); }
+  if (date === "last7days") return Date.now() - 7 * DAY_MS;
+  if (date === "last30days") return Date.now() - 30 * DAY_MS;
+  return null;
+}
+
+/** "working" family: planning/running sessions also match 进行中. */
+function statusMatches(sessionStatus: SessionStatus | undefined, filter: SessionStatus): boolean {
+  const s = sessionStatus ?? "completed";
+  if (filter === "working") return s === "working" || s === "planning";
+  return s === filter;
+}
+
+/** Apply status + date filters to a session list. */
+function filterSessions(
+  sessions: SessionSummary[],
+  status: SessionStatus | null,
+  date: string | null,
+): SessionSummary[] {
+  if (!status && !date) return sessions;
+  const dateStart = getDateStart(date);
+  return sessions.filter((s) => {
+    if (status && !statusMatches(s.status, status)) return false;
+    if (dateStart !== null) {
+      const t = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
+      if (t < dateStart) return false;
+    }
+    return true;
+  });
+}
+
+/** Dropdown menu with status + date filter sections and a reset button. */
+function TaskFilterMenu({
+  filterStatus,
+  filterDate,
+  hasFilter,
+  onSelectStatus,
+  onSelectDate,
+  onClear,
+}: {
+  filterStatus: SessionStatus | null;
+  filterDate: string | null;
+  hasFilter: boolean;
+  onSelectStatus: (s: SessionStatus | null) => void;
+  onSelectDate: (d: string | null) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="task-filter-menu">
+      {/* 筛选状态 */}
+      <div className="task-filter-menu__section">
+        <div className="task-filter-menu__section-title">筛选状态</div>
+        <div className="task-filter-menu__options">
+          {STATUS_OPTIONS.map((opt) => {
+            const selected = opt.value === null ? filterStatus === null : filterStatus === opt.value;
+            return (
+              <button
+                key={opt.value ?? "__all_status"}
+                className={"task-filter-menu__option" + (selected ? " task-filter-menu__option--selected" : "")}
+                onClick={() => onSelectStatus(opt.value)}
+              >
+                <span className="task-filter-menu__option-label">{opt.label}</span>
+                {selected && <span className="task-filter-menu__option-check"><CheckIcon /></span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="task-filter-menu__divider" />
+      {/* 筛选时间 */}
+      <div className="task-filter-menu__section">
+        <div className="task-filter-menu__section-title">筛选时间</div>
+        <div className="task-filter-menu__options">
+          {DATE_OPTIONS.map((opt) => {
+            const selected = opt.value === null ? filterDate === null : filterDate === opt.value;
+            return (
+              <button
+                key={opt.value ?? "__all_date"}
+                className={"task-filter-menu__option" + (selected ? " task-filter-menu__option--selected" : "")}
+                onClick={() => onSelectDate(opt.value)}
+              >
+                <span className="task-filter-menu__option-label">{opt.label}</span>
+                {selected && <span className="task-filter-menu__option-check"><CheckIcon /></span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="task-filter-menu__divider" />
+      {/* 重置 */}
+      <button
+        className={"task-filter-menu__reset" + (!hasFilter ? " task-filter-menu__reset--disabled" : "")}
+        onClick={() => { if (hasFilter) onClear(); }}
+        disabled={!hasFilter}
+      >
+        <span className="task-filter-menu__reset-label">重置筛选条件</span>
+      </button>
+    </div>
   );
 }
 
@@ -363,6 +498,7 @@ export function Sidebar({
   onPlaceholder,
   onToast,
   onOpenProject,
+  onStartProjectConversation,
   activeNav,
 }: {
   onNewSession: () => void;
@@ -380,6 +516,8 @@ export function Sidebar({
   onToast?: (message: string) => void;
   /** Open a project detail view from the sidebar. */
   onOpenProject?: (projectId: string) => void;
+  /** Start a new conversation within a project. */
+  onStartProjectConversation?: (projectId: string) => void;
   activeNav: string;
 }) {
   const independent = useSessionsStore((s) => s.independent);
@@ -395,9 +533,39 @@ export function Sidebar({
   const setTasksOpen = useSessionsStore((s) => s.setTasksOpen);
   const setSpacesOpen = useSessionsStore((s) => s.setSpacesOpen);
 
+  // Task filter state
+  const filterStatus = useSessionsStore((s) => s.filterStatus);
+  const filterDate = useSessionsStore((s) => s.filterDate);
+  const setFilterStatus = useSessionsStore((s) => s.setFilterStatus);
+  const setFilterDate = useSessionsStore((s) => s.setFilterDate);
+  const clearFilters = useSessionsStore((s) => s.clearFilters);
+  const hasFilter = useSessionsStore(selectHasFilter);
+
   // Projects from the local store — shown as expandable nodes in 空间.
   const projects = useProjectsStore((s) => s.projects);
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close filter dropdown on outside click / Escape
+  useEffect(() => {
+    if (!filterOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
+        setFilterOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFilterOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleEsc);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleEsc);
+    };
+  }, [filterOpen]);
 
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -532,6 +700,12 @@ export function Sidebar({
   // already appear in the 任务 group.
   const spaceNodes = workspaces.filter((w) => w.cwd !== homeCwd);
 
+  // Apply status + date filters to the 任务 (independent) list.
+  const filteredIndependent = useMemo(
+    () => filterSessions(independent, filterStatus, filterDate),
+    [independent, filterStatus, filterDate],
+  );
+
   return (
     <aside className="sidebar">
       {/* macOS Overlay 标题栏:红绿灯悬浮在 logo 行左上,整行作为拖拽区
@@ -553,9 +727,30 @@ export function Sidebar({
         <button className="sidebar__icon-btn" aria-label="搜索" onClick={onOpenSearch}>
           <SearchIcon size="md" />
         </button>
-        <button className="sidebar__icon-btn" aria-label="筛选" onClick={() => onPlaceholder("筛选")}>
-          <FilterIcon size="md" />
-        </button>
+        <div className="task-filter-wrap" ref={filterRef}>
+          <button
+            className={"sidebar__icon-btn task-filter-trigger" + (hasFilter ? " task-filter-trigger--active" : "")}
+            aria-label="筛选"
+            aria-haspopup="menu"
+            aria-expanded={filterOpen}
+            onClick={() => setFilterOpen((v) => !v)}
+          >
+            <FilterIcon size="md" />
+            {hasFilter && <span className="task-filter-trigger__dot" />}
+          </button>
+          {filterOpen && (
+            <div className="task-filter-popover" role="menu">
+              <TaskFilterMenu
+                filterStatus={filterStatus}
+                filterDate={filterDate}
+                hasFilter={hasFilter}
+                onSelectStatus={setFilterStatus}
+                onSelectDate={setFilterDate}
+                onClear={clearFilters}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       <nav className="sidebar__nav">
@@ -588,7 +783,7 @@ export function Sidebar({
       <div className="sidebar__content">
         {/* 任务分组: 收件箱(初始目录)下的会话 */}
         <button className="sidebar__section-label" onClick={() => setTasksOpen(!tasksOpen)}>
-          <span>任务 ({independent.length})</span>
+          <span>任务 ({hasFilter ? `${filteredIndependent.length}/${independent.length}` : independent.length})</span>
           <ChevronDownIcon
             size="sm"
             className={"sidebar__chevron" + (tasksOpen ? "" : " sidebar__chevron--collapsed")}
@@ -596,8 +791,13 @@ export function Sidebar({
         </button>
         {tasksOpen && (
           <div className="sidebar__group">
-            {independent.length === 0 && <div className="sidebar__empty">暂无任务</div>}
-            {sortPinnedFirst(independent).map(renderConv)}
+            {filteredIndependent.length === 0 && independent.length > 0 && (
+              <div className="sidebar__empty sidebar__empty--filter">无匹配筛选条件的任务</div>
+            )}
+            {filteredIndependent.length === 0 && independent.length === 0 && (
+              <div className="sidebar__empty">暂无任务</div>
+            )}
+            {sortPinnedFirst(filteredIndependent).map(renderConv)}
           </div>
         )}
 
@@ -626,6 +826,18 @@ export function Sidebar({
                   >
                     <ProjectNodeIcon />
                     <span className="sidebar__node-name">{proj.name}</span>
+                    <span
+                      role="button"
+                      className="sidebar__node-action"
+                      aria-label="新建对话"
+                      data-tip="新建对话"
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        onStartProjectConversation?.(proj.id);
+                      }}
+                    >
+                      <AddIcon size="sm" />
+                    </span>
                     <ChevronDownIcon
                       size="sm"
                       className={"sidebar__chevron" + (open ? "" : " sidebar__chevron--collapsed")}
@@ -637,16 +849,22 @@ export function Sidebar({
                   </button>
                   {open && (
                     <div className="sidebar__children">
-                      {proj.tasks.length === 0 && (
-                        <div className="sidebar__empty">暂无任务</div>
+                      {proj.conversations.length === 0 && (
+                        <div className="sidebar__empty">暂无对话</div>
                       )}
-                      {proj.tasks.map((task) => (
-                        <div key={task.id} className="sidebar__project-task">
-                          <span className="sidebar__project-task-title">{task.title}</span>
-                          {task.status === "in_progress" && (
-                            <span className="sidebar__project-task-spinner" />
-                          )}
-                        </div>
+                      {proj.conversations.map((conv) => (
+                        <button
+                          key={conv.sessionId}
+                          className={
+                            "sidebar__conv" +
+                            (conv.sessionId === currentSessionId ? " sidebar__conv--active" : "")
+                          }
+                          onClick={() => onSelect(conv.sessionId, proj.cwd)}
+                          title={conv.title}
+                        >
+                          <span className="sidebar__conv-title">{conv.title}</span>
+                          <span className="sidebar__conv-time">{relativeTime(conv.createdAt)}</span>
+                        </button>
                       ))}
                     </div>
                   )}

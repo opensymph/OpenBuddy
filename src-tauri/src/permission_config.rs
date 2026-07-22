@@ -386,3 +386,128 @@ pub async fn permission_mode_set(
     }
     Ok(())
 }
+
+// ---------- unit tests ----------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- parse_compact_rule ---
+
+    #[test]
+    fn parse_tool_with_pattern() {
+        let rule = parse_compact_rule("Bash(git *)", "allow");
+        assert_eq!(rule.action, "allow");
+        assert_eq!(rule.tool, "bash");
+        assert_eq!(rule.pattern.as_deref(), Some("git *"));
+    }
+
+    #[test]
+    fn parse_tool_without_pattern() {
+        let rule = parse_compact_rule("Read", "deny");
+        assert_eq!(rule.action, "deny");
+        assert_eq!(rule.tool, "read");
+        assert_eq!(rule.pattern, None);
+    }
+
+    #[test]
+    fn parse_tool_with_empty_parens() {
+        let rule = parse_compact_rule("Edit()", "allow");
+        assert_eq!(rule.tool, "edit");
+        assert_eq!(rule.pattern, None);
+    }
+
+    #[test]
+    fn parse_tool_with_complex_pattern() {
+        let rule = parse_compact_rule("Bash(rm -rf /)", "deny");
+        assert_eq!(rule.tool, "bash");
+        assert_eq!(rule.pattern.as_deref(), Some("rm -rf /"));
+    }
+
+    #[test]
+    fn parse_tool_with_nested_parens_in_pattern() {
+        let rule = parse_compact_rule("Bash(echo (hello))", "allow");
+        assert_eq!(rule.tool, "bash");
+        // trim_end_matches(')') strips ALL trailing ')' chars
+        assert_eq!(rule.pattern.as_deref(), Some("echo (hello"));
+    }
+
+    // --- rule_to_compact ---
+
+    #[test]
+    fn compact_with_pattern() {
+        let rule = PermissionRule {
+            action: "allow".into(),
+            tool: "bash".into(),
+            pattern: Some("git *".into()),
+        };
+        assert_eq!(rule_to_compact(&rule), "Bash(git *)");
+    }
+
+    #[test]
+    fn compact_without_pattern() {
+        let rule = PermissionRule {
+            action: "deny".into(),
+            tool: "read".into(),
+            pattern: None,
+        };
+        assert_eq!(rule_to_compact(&rule), "Read");
+    }
+
+    #[test]
+    fn compact_empty_pattern_treated_as_none() {
+        let rule = PermissionRule {
+            action: "allow".into(),
+            tool: "edit".into(),
+            pattern: Some("".into()),
+        };
+        assert_eq!(rule_to_compact(&rule), "Edit");
+    }
+
+    // --- capitalize_tool ---
+
+    #[test]
+    fn capitalize_various() {
+        assert_eq!(capitalize_tool("bash"), "Bash");
+        assert_eq!(capitalize_tool("read"), "Read");
+        assert_eq!(capitalize_tool("edit"), "Edit");
+        assert_eq!(capitalize_tool("mcp"), "Mcp");
+        assert_eq!(capitalize_tool(""), "");
+        assert_eq!(capitalize_tool("a"), "A");
+    }
+
+    // --- round-trip: parse → to_compact ---
+
+    #[test]
+    fn roundtrip_compact_rules() {
+        let cases = vec![
+            ("Bash(git *)", "allow"),
+            ("Read", "deny"),
+            ("Edit(/tmp/**)", "allow"),
+            ("Bash(rm -rf *)", "deny"),
+        ];
+        for (input, action) in cases {
+            let rule = parse_compact_rule(input, action);
+            let output = rule_to_compact(&rule);
+            assert_eq!(output, input, "round-trip failed for {input}");
+        }
+    }
+
+    // --- AgentDefaults ---
+
+    #[test]
+    fn agent_defaults_default() {
+        let d = AgentDefaults::default();
+        assert_eq!(d.default_model, "");
+        assert_eq!(d.default_permission, "");
+        assert_eq!(d.remember_tool_approvals, None);
+    }
+
+    // --- PERMISSION_MODES ---
+
+    #[test]
+    fn permission_modes_constant() {
+        assert_eq!(PERMISSION_MODES, ["ask", "auto", "always-approve"]);
+    }
+}

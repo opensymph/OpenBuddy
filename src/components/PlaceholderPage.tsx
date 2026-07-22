@@ -44,6 +44,8 @@ interface PlaceholderPageProps {
   onModelChange?: (id: string) => void;
   /** 项目页：进入项目（新建会话并注入说明）。 */
   onStartProject?: (project: ProjectMeta) => void;
+  /** 项目页：在项目中新建对话（创建真实 grok 会话）。 */
+  onStartProjectConversation?: (projectId: string, message: string) => void;
 }
 
 /** WorkBuddy 独有功能面板（助理/专家·技能·连接器/项目/自动化/资料库/插件·市场/发现）。 */
@@ -65,6 +67,7 @@ export function PlaceholderPage({
   models,
   onModelChange,
   onStartProject,
+  onStartProjectConversation,
 }: PlaceholderPageProps) {
   if (label === "助理") {
     return (
@@ -88,6 +91,7 @@ export function PlaceholderPage({
         onSelectWorkspace={onSelectWorkspace}
         onToast={onToast}
         onStartProject={onStartProject}
+        onStartProjectConversation={onStartProjectConversation}
       />
     );
   }

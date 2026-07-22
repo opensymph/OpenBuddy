@@ -3594,6 +3594,142 @@ button.diff__path {
   font-size: 12px;
   color: var(--wb-text-tertiary);
 }
+.sidebar__empty--filter {
+  color: var(--wb-text-secondary);
+  font-style: italic;
+}
+
+/* ---------- Task filter dropdown (对齐 WorkBuddy TaskFilterMenu) ---------- */
+
+.task-filter-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.task-filter-trigger {
+  position: relative;
+}
+.task-filter-trigger--active {
+  color: var(--wb-text-brand, #00C29A);
+}
+.task-filter-trigger__dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e5484d;
+  border: 1px solid var(--wb-bg-primary);
+}
+.task-filter-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 220px;
+  background: var(--wb-bg-primary);
+  border: 1px solid var(--wb-border-default);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06), 0 4px 8px rgba(0, 0, 0, 0.04);
+  padding: 8px;
+  z-index: 1200;
+  animation: taskFilterFadeIn 0.14s ease-out;
+}
+@keyframes taskFilterFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.task-filter-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-filter-menu__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.task-filter-menu__section-title {
+  padding: 3px 8px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--wb-text-tertiary);
+  user-select: none;
+}
+.task-filter-menu__options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.task-filter-menu__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--wb-text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+.task-filter-menu__option:hover {
+  background: var(--wb-bg-hover, color-mix(in srgb, var(--wb-palette-black-100) 5%, transparent));
+}
+.task-filter-menu__option--selected {
+  background: var(--wb-bg-hover, color-mix(in srgb, var(--wb-palette-black-100) 5%, transparent));
+  font-weight: 600;
+}
+.task-filter-menu__option-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-filter-menu__option-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.task-filter-menu__divider {
+  height: 1px;
+  background: var(--wb-border-subtle, var(--wb-border-default));
+  margin: 0 -8px;
+}
+.task-filter-menu__reset {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--wb-text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+.task-filter-menu__reset:hover {
+  background: var(--wb-bg-hover, color-mix(in srgb, var(--wb-palette-black-100) 5%, transparent));
+}
+.task-filter-menu__reset--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.task-filter-menu__reset--disabled:hover {
+  background: none;
+}
+.task-filter-menu__reset-label {
+  flex: 1;
+}
 .sidebar__conv {
   display: flex;
   align-items: center;
@@ -4098,14 +4234,35 @@ button.diff__path {
   color: var(--wb-text-tertiary);
 }
 
-/* Project nodes in 空间 section — expandable with child tasks. */
+/* Project nodes in 空间 section — expandable with child conversations. */
 .sidebar__node--project {
   color: var(--wb-text-strong);
 }
 .sidebar__node--project:hover {
   background: color-mix(in srgb, var(--wb-palette-black-100) 5%, transparent);
 }
-/* Task row inside an expanded project node. */
+/* "+" action button on a project node (visible on hover). */
+.sidebar__node-action {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--wb-text-tertiary);
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: pointer;
+}
+.sidebar__node--project:hover .sidebar__node-action {
+  opacity: 1;
+}
+.sidebar__node-action:hover {
+  color: var(--wb-text-strong);
+  background: color-mix(in srgb, var(--wb-palette-black-100) 8%, transparent);
+}
+/* Legacy task row styles (kept for backward compat, no longer used in sidebar). */
 .sidebar__project-task {
   display: flex;
   align-items: center;

@@ -37,7 +37,7 @@ import {
   type WorkspaceInfo,
 } from "./lib/grok-client";
 import type { AgentEntry } from "./lib/types";
-import type { ProjectMeta } from "./stores/projects-store";
+import { useProjectsStore, type ProjectMeta } from "./stores/projects-store";
 import { IS_MACOS } from "./lib/platform";
 
 /**
@@ -158,6 +158,8 @@ function Shell() {
               return;
             }
             sessionStore.getState().markComplete(p);
+            // Update sidebar status so the task filter reflects the completion.
+            sessionsStore.getState().upsert({ sessionId: p.sessionId, status: "completed" });
             void notificationAppend(
               "session_complete",
               `会话完成（${p.stopReason ?? "end_turn"}）`,
@@ -177,6 +179,14 @@ function Shell() {
               title,
               updatedAt: new Date().toISOString(),
             });
+            // Sync title into the owning project's conversation list.
+            const allProjects = useProjectsStore.getState().projects;
+            for (const p of allProjects) {
+              if (p.conversations.some((c) => c.sessionId === sessionId)) {
+                useProjectsStore.getState().updateConversationTitle(p.id, sessionId, title);
+                break;
+              }
+            }
             void notificationAppend(
               "summary",
               `生成会话标题：${title}`,
@@ -321,10 +331,6 @@ function Shell() {
   };
   const handlePlaceholder = (label: string) => {
     // Route a few sidebar shortcut buttons to real panels instead of toasts.
-    if (label === "筛选") {
-      setSearchOpen(true);
-      return;
-    }
     if (label === "用户中心") {
       setSettingsOpen(true);
       return;
@@ -343,6 +349,12 @@ function Shell() {
     sessionStore.getState().reset();
   };
 
+  // Sidebar project node click → open the Projects panel with that project selected.
+  const handleOpenProjectFromSidebar = (projectId: string) => {
+    useProjectsStore.getState().setActiveProjectId(projectId);
+    handleNavigate("项目");
+  };
+
   const handleSendNew = async (text: string) => {
     console.log('[OpenBuddy] handleSendNew called with:', text);
     try {
@@ -357,7 +369,7 @@ function Shell() {
       // push the LLM-generated title via the grok://summary event
       // (SessionSummaryGenerated) within a few seconds, which our onSummary
       // handler applies to the same store entry, overriding this fallback.
-      sessionsStore.getState().upsert({ sessionId, title: deriveTitle(text), cwd });
+      sessionsStore.getState().upsert({ sessionId, title: deriveTitle(text), cwd, status: "working" });
       sessionStore.getState().setSession(sessionId);
       sessionStore.getState().pushUser(text);
       sessionStore.getState().startStreaming();
@@ -367,6 +379,9 @@ function Shell() {
     } catch (e) {
       console.error('[OpenBuddy] handleSendNew error:', e);
       sessionStore.getState().setError(String(e));
+      // Mark the sidebar entry as failed so the task filter can find it.
+      const sid = sessionStore.getState().sessionId;
+      if (sid) sessionsStore.getState().upsert({ sessionId: sid, status: "failed" });
     }
   };
 
@@ -378,11 +393,13 @@ function Shell() {
     // startStreaming would orphan an empty placeholder that never completes.
     if (sessionStore.getState().streaming) return;
     try {
+      sessionsStore.getState().upsert({ sessionId: currentSessionId, status: "working" });
       sessionStore.getState().pushUser(text);
       sessionStore.getState().startStreaming();
       await grokSend(currentSessionId, text);
     } catch (e) {
       sessionStore.getState().setError(String(e));
+      sessionsStore.getState().upsert({ sessionId: currentSessionId, status: "failed" });
     }
   };
 
@@ -526,7 +543,7 @@ function Shell() {
       const cwd = cwdRef.current;
       const sessionId = await grokNewSession(cwd, currentModelId);
       sessionsStore.getState().setCurrent(sessionId);
-      sessionsStore.getState().upsert({ sessionId, title: agent.name, cwd });
+      sessionsStore.getState().upsert({ sessionId, title: agent.name, cwd, status: "working" });
       sessionStore.getState().setSession(sessionId);
       // Send a quiet preamble so grok adopts the agent's persona for this turn.
       // We don't display it as a user bubble — it's scaffolding. The simplest
@@ -541,6 +558,8 @@ function Shell() {
       await grokSend(sessionId, preamble);
     } catch (e) {
       sessionStore.getState().setError(String(e));
+      const sid = sessionStore.getState().sessionId;
+      if (sid) sessionsStore.getState().upsert({ sessionId: sid, status: "failed" });
       showToast(`启动助理失败：${String(e).replace(/^Error:\s*/, "")}`);
     }
   };
@@ -558,6 +577,7 @@ function Shell() {
         sessionId,
         title: agent ? agent.name : deriveTitle(prompt),
         cwd,
+        status: "working",
       });
       sessionStore.getState().setSession(sessionId);
       const body = agent
@@ -568,6 +588,8 @@ function Shell() {
       await grokSend(sessionId, body);
     } catch (e) {
       sessionStore.getState().setError(String(e));
+      const sid = sessionStore.getState().sessionId;
+      if (sid) sessionsStore.getState().upsert({ sessionId: sid, status: "failed" });
       showToast(`启动失败：${String(e).replace(/^Error:\s*/, "")}`);
     }
   };
@@ -583,8 +605,14 @@ function Shell() {
       const cwd = cwdRef.current;
       const sessionId = await grokNewSession(cwd, currentModelId);
       sessionsStore.getState().setCurrent(sessionId);
-      sessionsStore.getState().upsert({ sessionId, title: project.name, cwd });
+      sessionsStore.getState().upsert({ sessionId, title: project.name, cwd, status: "working" });
       sessionStore.getState().setSession(sessionId);
+      // Register the session as a project conversation.
+      useProjectsStore.getState().addConversation(project.id, {
+        sessionId,
+        title: project.name,
+        createdAt: new Date().toISOString(),
+      });
       const seed = project.instructions?.trim()
         ? project.instructions
         : `你好，我们开始「${project.name}」项目吧。`;
@@ -593,7 +621,53 @@ function Shell() {
       await grokSend(sessionId, seed);
     } catch (e) {
       sessionStore.getState().setError(String(e));
+      const sid = sessionStore.getState().sessionId;
+      if (sid) sessionsStore.getState().upsert({ sessionId: sid, status: "failed" });
       showToast(`启动项目失败：${String(e).replace(/^Error:\s*/, "")}`);
+    }
+  };
+
+  // 在项目中新建对话（从侧栏 + 按钮或项目详情页 Composer 触发）。
+  // 创建 grok 会话 → 注册到项目 conversations → 打开 ChatView → 可选发送首条消息。
+  const handleStartProjectConversation = async (projectId: string, message?: string) => {
+    const project = useProjectsStore.getState().projects.find((p) => p.id === projectId);
+    if (!project) return;
+    try {
+      const cwd = project.cwd || cwdRef.current;
+      const sessionId = await grokNewSession(cwd, currentModelId);
+
+      const title = message ? deriveTitle(message) : `${project.name} 对话`;
+
+      // Register conversation in the project.
+      useProjectsStore.getState().addConversation(projectId, {
+        sessionId,
+        title,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Navigate to chat view.
+      setPlaceholderView(null);
+      sessionsStore.getState().setCurrent(sessionId);
+      sessionsStore.getState().upsert({ sessionId, title, cwd, status: message ? "working" : "pending" });
+      sessionStore.getState().setSession(sessionId);
+
+      if (message) {
+        // For the first conversation in a project, prepend project instructions
+        // as context so grok understands the project's background and rules.
+        const isFirst = project.conversations.length === 0;
+        const hasInstructions = !!project.instructions?.trim();
+        const prompt = isFirst && hasInstructions
+          ? `[项目「${project.name}」背景与规范]\n${project.instructions!.trim()}\n\n[用户消息]\n${message}`
+          : message;
+        sessionStore.getState().pushUser(message);
+        sessionStore.getState().startStreaming();
+        await grokSend(sessionId, prompt);
+      }
+    } catch (e) {
+      sessionStore.getState().setError(String(e));
+      const sid = sessionStore.getState().sessionId;
+      if (sid) sessionsStore.getState().upsert({ sessionId: sid, status: "failed" });
+      showToast(`创建项目对话失败：${String(e).replace(/^Error:\s*/, "")}`);
     }
   };
 
@@ -617,6 +691,8 @@ function Shell() {
           onOpenSearch={() => setSearchOpen(true)}
           onPlaceholder={handlePlaceholder}
           onToast={showToast}
+          onOpenProject={handleOpenProjectFromSidebar}
+          onStartProjectConversation={handleStartProjectConversation}
           activeNav={activeNav}
         />
         <main className="app__main">
@@ -706,6 +782,7 @@ function Shell() {
               models={models}
               onModelChange={handleModelChange}
               onStartProject={handleStartProject}
+              onStartProjectConversation={handleStartProjectConversation}
             />
           ) : currentSessionId ? (
             <ChatView

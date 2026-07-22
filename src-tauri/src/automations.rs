@@ -836,3 +836,433 @@ pub fn start_scheduler(tx: xai_acp_lib::AcpAgentTx, default_cwd: PathBuf) {
         }
     });
 }
+
+// ---------- unit tests ----------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    /// Helper: build a local DateTime from components.
+    fn local(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
+        Local
+            .with_ymd_and_hms(y, mo, d, h, mi, 0)
+            .single()
+            .expect("valid local datetime")
+    }
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    // --- parse_hhmm ---
+
+    #[test]
+    fn parse_hhmm_valid() {
+        assert_eq!(parse_hhmm("09:30"), Some((9, 30)));
+        assert_eq!(parse_hhmm("00:00"), Some((0, 0)));
+        assert_eq!(parse_hhmm("23:59"), Some((23, 59)));
+    }
+
+    #[test]
+    fn parse_hhmm_invalid() {
+        assert_eq!(parse_hhmm("24:00"), None);
+        assert_eq!(parse_hhmm("12:60"), None);
+        assert_eq!(parse_hhmm("abc"), None);
+        assert_eq!(parse_hhmm(""), None);
+        assert_eq!(parse_hhmm("12"), None);
+    }
+
+    // --- parse_date ---
+
+    #[test]
+    fn parse_date_valid() {
+        assert_eq!(parse_date("2026-07-01"), Some(date(2026, 7, 1)));
+        assert_eq!(parse_date(" 2026-01-15 "), Some(date(2026, 1, 15)));
+    }
+
+    #[test]
+    fn parse_date_invalid() {
+        assert_eq!(parse_date("not-a-date"), None);
+        assert_eq!(parse_date("2026-13-01"), None);
+        assert_eq!(parse_date(""), None);
+    }
+
+    // --- weekday_code ---
+
+    #[test]
+    fn weekday_code_all_days() {
+        // 2026-07-06 is Monday
+        assert_eq!(weekday_code(date(2026, 7, 6)), "MO");
+        assert_eq!(weekday_code(date(2026, 7, 7)), "TU");
+        assert_eq!(weekday_code(date(2026, 7, 8)), "WE");
+        assert_eq!(weekday_code(date(2026, 7, 9)), "TH");
+        assert_eq!(weekday_code(date(2026, 7, 10)), "FR");
+        assert_eq!(weekday_code(date(2026, 7, 11)), "SA");
+        assert_eq!(weekday_code(date(2026, 7, 12)), "SU");
+    }
+
+    // --- week_start ---
+
+    #[test]
+    fn week_start_returns_monday() {
+        // Wednesday 2026-07-08 → Monday 2026-07-06
+        assert_eq!(week_start(date(2026, 7, 8)), date(2026, 7, 6));
+        // Monday itself
+        assert_eq!(week_start(date(2026, 7, 6)), date(2026, 7, 6));
+        // Sunday 2026-07-12 → Monday 2026-07-06
+        assert_eq!(week_start(date(2026, 7, 12)), date(2026, 7, 6));
+    }
+
+    // --- recurring_next: DAILY ---
+
+    #[test]
+    fn daily_next_same_day_future() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::DAILY,
+            byhour: 14,
+            byminute: 0,
+            ..Default::default()
+        };
+        let anchor = local(2026, 7, 1, 9, 0);
+        let from = local(2026, 7, 6, 10, 0); // before 14:00
+        let next = recurring_next(&sched, &anchor, from).unwrap();
+        assert_eq!(next, local(2026, 7, 6, 14, 0));
+    }
+
+    #[test]
+    fn daily_next_rolls_to_tomorrow() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::DAILY,
+            byhour: 9,
+            byminute: 0,
+            ..Default::default()
+        };
+        let anchor = local(2026, 7, 1, 9, 0);
+        let from = local(2026, 7, 6, 10, 0); // after 09:00
+        let next = recurring_next(&sched, &anchor, from).unwrap();
+        assert_eq!(next, local(2026, 7, 7, 9, 0));
+    }
+
+    // --- recurring_next: WEEKLY ---
+
+    #[test]
+    fn weekly_next_matching_day() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::WEEKLY,
+            interval: 1,
+            byday: vec!["WE".into()],
+            byhour: 10,
+            byminute: 0,
+            ..Default::default()
+        };
+        let anchor = local(2026, 7, 6, 9, 0); // Monday
+        let from = local(2026, 7, 6, 12, 0); // Monday noon
+        let next = recurring_next(&sched, &anchor, from).unwrap();
+        // Next Wednesday = 2026-07-08
+        assert_eq!(next, local(2026, 7, 8, 10, 0));
+    }
+
+    #[test]
+    fn weekly_biweek_skips_alternate_weeks() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::WEEKLY,
+            interval: 2,
+            byday: vec!["MO".into()],
+            byhour: 9,
+            byminute: 0,
+            ..Default::default()
+        };
+        // Anchor week starts Mon 2026-07-06.
+        let anchor = local(2026, 7, 6, 9, 0);
+        // From Monday 2026-07-13 (next week, odd offset from anchor week).
+        let from = local(2026, 7, 13, 10, 0);
+        let next = recurring_next(&sched, &anchor, from).unwrap();
+        // Should skip to Mon 2026-07-20 (even weeks from anchor).
+        assert_eq!(next, local(2026, 7, 20, 9, 0));
+    }
+
+    // --- recurring_next: MONTHLY ---
+
+    #[test]
+    fn monthly_next_matching_day() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::MONTHLY,
+            bymonthday: vec![15],
+            byhour: 8,
+            byminute: 30,
+            ..Default::default()
+        };
+        let anchor = local(2026, 7, 1, 9, 0);
+        let from = local(2026, 7, 10, 12, 0);
+        let next = recurring_next(&sched, &anchor, from).unwrap();
+        assert_eq!(next, local(2026, 7, 15, 8, 30));
+    }
+
+    #[test]
+    fn monthly_rolls_to_next_month() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::MONTHLY,
+            bymonthday: vec![5],
+            byhour: 9,
+            byminute: 0,
+            ..Default::default()
+        };
+        let anchor = local(2026, 7, 1, 9, 0);
+        let from = local(2026, 7, 10, 12, 0); // past the 5th
+        let next = recurring_next(&sched, &anchor, from).unwrap();
+        assert_eq!(next, local(2026, 8, 5, 9, 0));
+    }
+
+    #[test]
+    fn monthly_empty_bymonthday_returns_none() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::MONTHLY,
+            bymonthday: vec![],
+            ..Default::default()
+        };
+        let anchor = local(2026, 7, 1, 9, 0);
+        let from = local(2026, 7, 10, 12, 0);
+        assert!(recurring_next(&sched, &anchor, from).is_none());
+    }
+
+    // --- recurring_next: YEARLY ---
+
+    #[test]
+    fn yearly_next_this_year() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::YEARLY,
+            bymonth: vec![12],
+            bymonthday: vec![25],
+            byhour: 10,
+            byminute: 0,
+            ..Default::default()
+        };
+        let anchor = local(2026, 1, 1, 9, 0);
+        let from = local(2026, 7, 1, 12, 0);
+        let next = recurring_next(&sched, &anchor, from).unwrap();
+        assert_eq!(next, local(2026, 12, 25, 10, 0));
+    }
+
+    #[test]
+    fn yearly_rolls_to_next_year() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::YEARLY,
+            bymonth: vec![3],
+            bymonthday: vec![1],
+            byhour: 9,
+            byminute: 0,
+            ..Default::default()
+        };
+        let anchor = local(2026, 1, 1, 9, 0);
+        let from = local(2026, 7, 1, 12, 0); // past March
+        let next = recurring_next(&sched, &anchor, from).unwrap();
+        assert_eq!(next, local(2027, 3, 1, 9, 0));
+    }
+
+    // --- recurring_next: HOURLY ---
+
+    #[test]
+    fn hourly_next_within_day() {
+        let sched = AutomationSchedule {
+            freq: ScheduleFreq::HOURLY,
+            interval_hours: 3,
+            byday: ALL_DAYS.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
+        let anchor = local(2026, 7, 6, 0, 0);
+        let from = local(2026, 7, 6, 7, 30); // between 06:00 and 09:00
+        let next = recurring_next(&sched, &anchor, from).unwrap();
+        assert_eq!(next, local(2026, 7, 6, 9, 0));
+    }
+
+    // --- compute_next_run ---
+
+    #[test]
+    fn compute_next_run_paused_returns_none() {
+        let a = Automation {
+            id: "1".into(),
+            name: "test".into(),
+            prompt: "p".into(),
+            status: "PAUSED".into(),
+            created_at: "2026-01-01T00:00:00+08:00".into(),
+            ..test_automation()
+        };
+        assert!(compute_next_run(&a, local(2026, 7, 6, 10, 0)).is_none());
+    }
+
+    #[test]
+    fn compute_next_run_once_future() {
+        let a = Automation {
+            id: "1".into(),
+            name: "once".into(),
+            prompt: "p".into(),
+            schedule_type: "once".into(),
+            scheduled_date: Some("2026-12-25".into()),
+            scheduled_time: Some("10:00".into()),
+            created_at: "2026-01-01T00:00:00+08:00".into(),
+            ..test_automation()
+        };
+        let result = compute_next_run(&a, local(2026, 7, 6, 10, 0));
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn compute_next_run_once_past_returns_none() {
+        let a = Automation {
+            id: "1".into(),
+            name: "once".into(),
+            prompt: "p".into(),
+            schedule_type: "once".into(),
+            scheduled_date: Some("2020-01-01".into()),
+            scheduled_time: Some("10:00".into()),
+            created_at: "2020-01-01T00:00:00+08:00".into(),
+            ..test_automation()
+        };
+        assert!(compute_next_run(&a, local(2026, 7, 6, 10, 0)).is_none());
+    }
+
+    #[test]
+    fn compute_next_run_expired_validity_returns_none() {
+        let a = Automation {
+            id: "1".into(),
+            name: "expired".into(),
+            prompt: "p".into(),
+            valid_until_date: Some("2026-06-30".into()),
+            created_at: "2026-01-01T00:00:00+08:00".into(),
+            ..test_automation()
+        };
+        // from is after valid_until
+        assert!(compute_next_run(&a, local(2026, 7, 6, 10, 0)).is_none());
+    }
+
+    // --- first_cwd ---
+
+    #[test]
+    fn first_cwd_extracts_first_entry() {
+        let a = Automation {
+            cwds: "/home/user, /tmp".into(),
+            ..test_automation()
+        };
+        assert_eq!(first_cwd(&a), Some("/home/user".into()));
+    }
+
+    #[test]
+    fn first_cwd_empty_returns_none() {
+        let a = Automation {
+            cwds: "".into(),
+            ..test_automation()
+        };
+        assert_eq!(first_cwd(&a), None);
+    }
+
+    // --- blank_to_none ---
+
+    #[test]
+    fn blank_to_none_normalizes() {
+        let mut v = Some("  ".to_string());
+        blank_to_none(&mut v);
+        assert_eq!(v, None);
+
+        let mut v2 = Some("hello".to_string());
+        blank_to_none(&mut v2);
+        assert_eq!(v2, Some("hello".into()));
+
+        let mut v3: Option<String> = None;
+        blank_to_none(&mut v3);
+        assert_eq!(v3, None);
+    }
+
+    // --- migrate_legacy_json ---
+
+    #[test]
+    fn migrate_legacy_daily() {
+        let mut json = serde_json::json!({
+            "automations": [{
+                "id": "1",
+                "name": "old",
+                "prompt": "p",
+                "status": "active",
+                "cwd": "/home",
+                "createdAt": "2025-01-01T00:00:00+08:00",
+                "schedule": { "type": "daily", "time": "08:30" }
+            }]
+        });
+        migrate_legacy_json(&mut json);
+        let item = &json["automations"][0];
+        assert_eq!(item["status"], "ACTIVE");
+        assert_eq!(item["cwds"], "/home");
+        assert_eq!(item["schedule"]["freq"], "DAILY");
+        assert_eq!(item["schedule"]["byhour"], 8);
+        assert_eq!(item["schedule"]["byminute"], 30);
+    }
+
+    #[test]
+    fn migrate_legacy_weekly_with_weekdays() {
+        let mut json = serde_json::json!({
+            "automations": [{
+                "id": "2",
+                "name": "weekly",
+                "prompt": "p",
+                "status": "paused",
+                "createdAt": "2025-01-01T00:00:00+08:00",
+                "schedule": { "type": "weekly", "time": "17:00", "weekdays": [1, 5] }
+            }]
+        });
+        migrate_legacy_json(&mut json);
+        let sched = &json["automations"][0]["schedule"];
+        assert_eq!(sched["freq"], "WEEKLY");
+        // 1=MO, 5=FR in the legacy 0=Sunday mapping
+        let byday = sched["byday"].as_array().unwrap();
+        assert!(byday.contains(&serde_json::json!("MO")));
+        assert!(byday.contains(&serde_json::json!("FR")));
+    }
+
+    #[test]
+    fn migrate_legacy_already_current_is_noop() {
+        let mut json = serde_json::json!({
+            "automations": [{
+                "id": "3",
+                "name": "current",
+                "prompt": "p",
+                "status": "ACTIVE",
+                "createdAt": "2025-01-01T00:00:00+08:00",
+                "schedule": { "freq": "DAILY", "interval": 1, "byday": ["MO"], "byhour": 9, "byminute": 0 }
+            }]
+        });
+        let before = json.clone();
+        migrate_legacy_json(&mut json);
+        // schedule.freq already present → no change to schedule
+        assert_eq!(json["automations"][0]["schedule"], before["automations"][0]["schedule"]);
+    }
+
+    // --- helper ---
+
+    fn test_automation() -> Automation {
+        Automation {
+            id: String::new(),
+            name: String::new(),
+            prompt: String::new(),
+            cwds: String::new(),
+            status: "ACTIVE".into(),
+            model_id: None,
+            model_is_thinking: false,
+            skills: vec![],
+            expert_id: None,
+            expert_name: None,
+            connector_ids: vec![],
+            permission_mode: "fullAccess".into(),
+            schedule_type: "recurring".into(),
+            schedule: AutomationSchedule::default(),
+            scheduled_date: None,
+            scheduled_time: None,
+            valid_from_date: None,
+            valid_until_date: None,
+            push_to_we_chat: false,
+            last_run_at: None,
+            next_run_at: None,
+            created_at: String::new(),
+        }
+    }
+}

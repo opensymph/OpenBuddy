@@ -186,6 +186,14 @@ export interface PromptComplete {
 
 // ---------- session metadata ----------
 
+/** Lifecycle status for sidebar filtering, aligned with WorkBuddy's task filter.
+ *  - "working": actively streaming a response
+ *  - "completed": finished normally
+ *  - "failed": errored during send/stream
+ *  - "pending": created but no message sent yet
+ *  - "planning": in plan mode / awaiting plan approval */
+export type SessionStatus = "working" | "completed" | "failed" | "pending" | "planning";
+
 export interface SessionSummary {
   sessionId: string;
   /** Human-readable title. Display priority matches grok's `display_title`:
@@ -208,6 +216,8 @@ export interface SessionSummary {
   archived?: boolean;
   /** Model id bound to this session, if recorded in summary.json. */
   currentModelId?: string;
+  /** Lifecycle status for sidebar task filtering. Absent = "completed". */
+  status?: SessionStatus;
 }
 
 /** Payload of the `grok://summary` event — a freshly generated or renamed

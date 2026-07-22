@@ -45,10 +45,13 @@ export function ProjectDetailView({
   project,
   onBack,
   onToast,
+  onStartConversation,
 }: {
   project: ProjectMeta;
   onBack: () => void;
   onToast?: (msg: string) => void;
+  /** Start a new conversation within this project (creates a real grok session). */
+  onStartConversation?: (projectId: string, message: string) => void;
 }) {
   // 读最新（交互后 store 更新，父传入的快照可能过期）。
   const live = useProjectsStore((s) => s.projects.find((p) => p.id === project.id)) ?? project;
@@ -78,9 +81,13 @@ export function ProjectDetailView({
   };
 
   const handleComposerSend = (text: string) => {
-    const preview = text.slice(0, 20);
-    const suffix = text.length > 20 ? "…" : "";
-    onToast?.(`已发送：${preview}${suffix}（本地演示）`);
+    if (onStartConversation) {
+      onStartConversation(live.id, text);
+    } else {
+      const preview = text.slice(0, 20);
+      const suffix = text.length > 20 ? "…" : "";
+      onToast?.(`已发送：${preview}${suffix}（本地演示）`);
+    }
   };
 
   return (

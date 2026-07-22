@@ -14,6 +14,13 @@ export interface RefItem {
   iconUrl?: string;
 }
 
+/** 项目下的真实对话（grok 会话）。 */
+export interface ProjectConversation {
+  sessionId: string;
+  title: string;
+  createdAt: string;
+}
+
 export type PlanStatus = "pending" | "in_progress" | "paused" | "completed";
 
 export interface PlanCard {
@@ -56,6 +63,8 @@ export interface ProjectMeta {
   tasks: TaskItem[];
   assets: AssetItem[];
   members: string[];
+  /** 项目下的真实对话（grok 会话列表），按创建时间倒序。 */
+  conversations: ProjectConversation[];
 }
 
 /** 计划看板列定义（对齐目标截图：待开始/进行中/暂停/完成）。 */
@@ -87,6 +96,7 @@ function normalize(x: unknown): ProjectMeta | null {
     tasks: Array.isArray(o.tasks) ? o.tasks : [],
     assets: Array.isArray(o.assets) ? o.assets : [],
     members: Array.isArray(o.members) ? o.members : [],
+    conversations: Array.isArray(o.conversations) ? o.conversations : [],
   };
 }
 
@@ -115,6 +125,9 @@ const uid = (p: string) => `${p}_${Date.now()}_${Math.random().toString(36).slic
 
 interface ProjectsState {
   projects: ProjectMeta[];
+  /** Sidebar → ProjectsPanel communication: when set, the panel auto-opens this project. */
+  activeProjectId: string | null;
+  setActiveProjectId: (id: string | null) => void;
   add: (p: {
     name: string;
     cwd?: string;
@@ -138,6 +151,9 @@ interface ProjectsState {
   addAsset: (id: string, a: Pick<AssetItem, "name" | "kind"> & Partial<AssetItem>) => void;
   removeAsset: (id: string, assetId: string) => void;
   addMember: (id: string, name: string) => void;
+  addConversation: (id: string, conv: ProjectConversation) => void;
+  removeConversation: (id: string, sessionId: string) => void;
+  updateConversationTitle: (id: string, sessionId: string, title: string) => void;
 }
 
 export const useProjectsStore = create<ProjectsState>((set, get) => {
@@ -148,6 +164,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => {
   };
   return {
     projects: load(),
+    activeProjectId: null,
+    setActiveProjectId: (id) => set({ activeProjectId: id }),
     add: (p) => {
       const item: ProjectMeta = {
         id: uid("proj"),
@@ -163,6 +181,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => {
         tasks: [],
         assets: [],
         members: [],
+        conversations: [],
       };
       const next = [item, ...get().projects];
       set({ projects: next });
@@ -217,5 +236,22 @@ export const useProjectsStore = create<ProjectsState>((set, get) => {
       patch(id, (p) =>
         p.members.includes(name) ? p : { ...p, members: [...p.members, name] },
       ),
+    addConversation: (id, conv) =>
+      patch(id, (p) => ({
+        ...p,
+        conversations: [conv, ...p.conversations],
+      })),
+    removeConversation: (id, sessionId) =>
+      patch(id, (p) => ({
+        ...p,
+        conversations: p.conversations.filter((c) => c.sessionId !== sessionId),
+      })),
+    updateConversationTitle: (id, sessionId, title) =>
+      patch(id, (p) => ({
+        ...p,
+        conversations: p.conversations.map((c) =>
+          c.sessionId === sessionId ? { ...c, title } : c,
+        ),
+      })),
   };
 });

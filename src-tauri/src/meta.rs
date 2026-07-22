@@ -130,3 +130,135 @@ pub fn set_archived(session_id: &str, archived: bool) -> Result<bool, String> {
     write_state(&state)?;
     Ok(archived)
 }
+
+// ---------- unit tests ----------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- OpenBuddyState::default ---
+
+    #[test]
+    fn default_state() {
+        let state = OpenBuddyState::default();
+        assert_eq!(state.version, 1);
+        assert!(state.pinned_sessions.is_empty());
+        assert!(state.archived_sessions.is_empty());
+    }
+
+    // --- pinned_set / archived_set ---
+
+    #[test]
+    fn pinned_set_converts_to_hashset() {
+        let state = OpenBuddyState {
+            version: 1,
+            pinned_sessions: vec!["s1".into(), "s2".into(), "s1".into()],
+            archived_sessions: vec![],
+        };
+        let set = state.pinned_set();
+        assert_eq!(set.len(), 2); // deduplicated
+        assert!(set.contains("s1"));
+        assert!(set.contains("s2"));
+    }
+
+    #[test]
+    fn archived_set_converts_to_hashset() {
+        let state = OpenBuddyState {
+            version: 1,
+            pinned_sessions: vec![],
+            archived_sessions: vec!["a1".into(), "a2".into()],
+        };
+        let set = state.archived_set();
+        assert_eq!(set.len(), 2);
+        assert!(set.contains("a1"));
+        assert!(set.contains("a2"));
+    }
+
+    #[test]
+    fn empty_sets() {
+        let state = OpenBuddyState::default();
+        assert!(state.pinned_set().is_empty());
+        assert!(state.archived_set().is_empty());
+    }
+
+    // --- serde round-trip ---
+
+    #[test]
+    fn state_serde_roundtrip() {
+        let state = OpenBuddyState {
+            version: 1,
+            pinned_sessions: vec!["s1".into()],
+            archived_sessions: vec!["a1".into(), "a2".into()],
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let parsed: OpenBuddyState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.version, 1);
+        assert_eq!(parsed.pinned_sessions, vec!["s1"]);
+        assert_eq!(parsed.archived_sessions, vec!["a1", "a2"]);
+    }
+
+    #[test]
+    fn state_deserialize_with_missing_fields() {
+        // Old format might not have all fields
+        let json = r#"{"version":1}"#;
+        let state: OpenBuddyState = serde_json::from_str(json).unwrap();
+        assert!(state.pinned_sessions.is_empty());
+        assert!(state.archived_sessions.is_empty());
+    }
+
+    // --- set_pinned / set_archived with GROK_HOME redirect ---
+    // NOTE: These tests share the GROK_HOME env var, so they MUST run in a
+    // single test function to avoid race conditions (cargo test runs tests
+    // in parallel threads within the same process).
+
+    #[test]
+    fn set_pinned_and_archived_lifecycle() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("GROK_HOME", tmp.path());
+
+        // --- pinned lifecycle ---
+        // Pin
+        let result = set_pinned("session-1", true).unwrap();
+        assert!(result);
+        let state = read_state();
+        assert!(state.pinned_sessions.contains(&"session-1".to_string()));
+
+        // Pin again (idempotent — no duplicate)
+        let result = set_pinned("session-1", true).unwrap();
+        assert!(result);
+        let state = read_state();
+        assert_eq!(state.pinned_sessions.iter().filter(|s| *s == "session-1").count(), 1);
+
+        // Unpin
+        let result = set_pinned("session-1", false).unwrap();
+        assert!(!result);
+        let state = read_state();
+        assert!(!state.pinned_sessions.contains(&"session-1".to_string()));
+
+        // Unpin again (idempotent)
+        let result = set_pinned("session-1", false).unwrap();
+        assert!(!result);
+
+        // --- archived lifecycle ---
+        // Archive
+        let result = set_archived("session-2", true).unwrap();
+        assert!(result);
+        let state = read_state();
+        assert!(state.archived_sessions.contains(&"session-2".to_string()));
+
+        // Archive again (idempotent)
+        let result = set_archived("session-2", true).unwrap();
+        assert!(result);
+        let state = read_state();
+        assert_eq!(state.archived_sessions.iter().filter(|s| *s == "session-2").count(), 1);
+
+        // Unarchive
+        let result = set_archived("session-2", false).unwrap();
+        assert!(!result);
+        let state = read_state();
+        assert!(!state.archived_sessions.contains(&"session-2".to_string()));
+
+        std::env::remove_var("GROK_HOME");
+    }
+}

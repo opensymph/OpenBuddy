@@ -450,3 +450,318 @@ pub fn providers_delete(model_id: String) -> Result<(), String> {
     }
     Ok(())
 }
+
+// ---------- unit tests ----------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- infer_provider_kind ---
+
+    #[test]
+    fn infer_anthropic_from_messages_backend() {
+        let mut table = Map::new();
+        table.insert("api_backend".into(), Value::String("messages".into()));
+        table.insert("base_url".into(), Value::String("https://api.anthropic.com/v1".into()));
+        assert_eq!(infer_provider_kind(&table), "anthropic");
+    }
+
+    #[test]
+    fn infer_grok_from_xai_url() {
+        let mut table = Map::new();
+        table.insert("api_backend".into(), Value::String("chat_completions".into()));
+        table.insert("base_url".into(), Value::String("https://api.x.ai/v1".into()));
+        assert_eq!(infer_provider_kind(&table), "grok");
+    }
+
+    #[test]
+    fn infer_openai() {
+        let mut table = Map::new();
+        table.insert("api_backend".into(), Value::String("chat_completions".into()));
+        table.insert("base_url".into(), Value::String("https://api.openai.com/v1".into()));
+        assert_eq!(infer_provider_kind(&table), "openai");
+    }
+
+    #[test]
+    fn infer_deepseek() {
+        let mut table = Map::new();
+        table.insert("api_backend".into(), Value::String("chat_completions".into()));
+        table.insert("base_url".into(), Value::String("https://api.deepseek.com".into()));
+        assert_eq!(infer_provider_kind(&table), "deepseek");
+    }
+
+    #[test]
+    fn infer_qwen() {
+        let mut table = Map::new();
+        table.insert("api_backend".into(), Value::String("chat_completions".into()));
+        table.insert("base_url".into(), Value::String("https://dashscope.aliyuncs.com/compatible-mode/v1".into()));
+        assert_eq!(infer_provider_kind(&table), "qwen");
+    }
+
+    #[test]
+    fn infer_custom_for_unknown() {
+        let mut table = Map::new();
+        table.insert("api_backend".into(), Value::String("chat_completions".into()));
+        table.insert("base_url".into(), Value::String("https://my-custom.api/v1".into()));
+        assert_eq!(infer_provider_kind(&table), "custom");
+    }
+
+    #[test]
+    fn infer_custom_for_missing_backend() {
+        let table = Map::new();
+        assert_eq!(infer_provider_kind(&table), "custom");
+    }
+
+    // --- validate_api_backend ---
+
+    #[test]
+    fn validate_api_backend_valid() {
+        assert!(validate_api_backend("").is_ok());
+        assert!(validate_api_backend("chat_completions").is_ok());
+        assert!(validate_api_backend("responses").is_ok());
+        assert!(validate_api_backend("messages").is_ok());
+    }
+
+    #[test]
+    fn validate_api_backend_invalid() {
+        assert!(validate_api_backend("graphql").is_err());
+        assert!(validate_api_backend("CHAT").is_err());
+    }
+
+    // --- validate_auth_scheme ---
+
+    #[test]
+    fn validate_auth_scheme_valid() {
+        assert!(validate_auth_scheme("").is_ok());
+        assert!(validate_auth_scheme("bearer").is_ok());
+        assert!(validate_auth_scheme("x_api_key").is_ok());
+    }
+
+    #[test]
+    fn validate_auth_scheme_invalid() {
+        assert!(validate_auth_scheme("basic").is_err());
+        assert!(validate_auth_scheme("Bearer").is_err());
+    }
+
+    // --- extract_providers ---
+
+    #[test]
+    fn extract_providers_parses_model_table() {
+        let mut models = Map::new();
+        let mut entry = Map::new();
+        entry.insert("api_backend".into(), Value::String("messages".into()));
+        entry.insert("base_url".into(), Value::String("https://api.anthropic.com/v1".into()));
+        entry.insert("api_key".into(), Value::String("sk-ant-xxx".into()));
+        entry.insert("auth_scheme".into(), Value::String("x_api_key".into()));
+        models.insert("claude-sonnet-4-5".into(), Value::Table(entry));
+
+        let providers = extract_providers(&models);
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].model_id, "claude-sonnet-4-5");
+        assert_eq!(providers[0].provider_kind, "anthropic");
+        // Key is masked
+        assert_eq!(providers[0].api_key.as_deref(), Some("••••"));
+    }
+
+    #[test]
+    fn extract_providers_skips_entries_without_backend_or_key() {
+        let mut models = Map::new();
+        // A bare model override with no api_backend and no api_key
+        let mut entry = Map::new();
+        entry.insert("temperature".into(), Value::String("0.7".into()));
+        models.insert("some-model".into(), Value::Table(entry));
+
+        let providers = extract_providers(&models);
+        assert_eq!(providers.len(), 0);
+    }
+
+    // --- resolve_field ---
+
+    #[test]
+    fn resolve_field_explicit_wins() {
+        let result = resolve_field(
+            &Some("https://custom.api".into()),
+            Some(&Value::String("https://old.api".into())),
+            Some("https://preset.api"),
+            "base_url",
+            false,
+        );
+        assert_eq!(result.unwrap(), "https://custom.api");
+    }
+
+    #[test]
+    fn resolve_field_existing_wins_over_preset() {
+        let result = resolve_field(
+            &None,
+            Some(&Value::String("https://existing.api".into())),
+            Some("https://preset.api"),
+            "base_url",
+            false,
+        );
+        assert_eq!(result.unwrap(), "https://existing.api");
+    }
+
+    #[test]
+    fn resolve_field_preset_fallback() {
+        let result = resolve_field(
+            &None,
+            None,
+            Some("https://preset.api"),
+            "base_url",
+            false,
+        );
+        assert_eq!(result.unwrap(), "https://preset.api");
+    }
+
+    #[test]
+    fn resolve_field_custom_missing_errors() {
+        let result = resolve_field(&None, None, None, "base_url", true);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("custom provider"));
+    }
+
+    #[test]
+    fn resolve_field_empty_explicit_falls_through() {
+        let result = resolve_field(
+            &Some("".into()),
+            Some(&Value::String("https://existing.api".into())),
+            Some("https://preset.api"),
+            "base_url",
+            false,
+        );
+        assert_eq!(result.unwrap(), "https://existing.api");
+    }
+
+    // --- provider_to_table ---
+
+    #[test]
+    fn provider_to_table_anthropic_preset() {
+        let p = ProviderConfig {
+            provider_kind: "anthropic".into(),
+            model_id: "claude-sonnet-4-5".into(),
+            label: None,
+            api_key: Some("sk-ant-test".into()),
+            base_url: None,
+            api_backend: None,
+            auth_scheme: None,
+            name: None,
+        };
+        let result = provider_to_table(&p, None).unwrap();
+        let table = result.as_table().unwrap();
+        assert_eq!(table["base_url"].as_str().unwrap(), "https://api.anthropic.com/v1");
+        assert_eq!(table["api_backend"].as_str().unwrap(), "messages");
+        assert_eq!(table["auth_scheme"].as_str().unwrap(), "x_api_key");
+        assert_eq!(table["api_key"].as_str().unwrap(), "sk-ant-test");
+    }
+
+    #[test]
+    fn provider_to_table_preserves_existing_keys() {
+        let mut existing_table = Map::new();
+        existing_table.insert("base_url".into(), Value::String("https://api.anthropic.com/v1".into()));
+        existing_table.insert("api_backend".into(), Value::String("messages".into()));
+        existing_table.insert("auth_scheme".into(), Value::String("x_api_key".into()));
+        existing_table.insert("api_key".into(), Value::String("old-key".into()));
+        existing_table.insert("temperature".into(), Value::String("0.5".into()));
+        let existing = Value::Table(existing_table);
+
+        let p = ProviderConfig {
+            provider_kind: "anthropic".into(),
+            model_id: "claude-sonnet-4-5".into(),
+            label: None,
+            api_key: Some("new-key".into()),
+            base_url: None,
+            api_backend: None,
+            auth_scheme: None,
+            name: None,
+        };
+        let result = provider_to_table(&p, Some(&existing)).unwrap();
+        let table = result.as_table().unwrap();
+        // User-added key preserved
+        assert_eq!(table["temperature"].as_str().unwrap(), "0.5");
+        // Key updated
+        assert_eq!(table["api_key"].as_str().unwrap(), "new-key");
+    }
+
+    #[test]
+    fn provider_to_table_masked_key_is_noop() {
+        let mut existing_table = Map::new();
+        existing_table.insert("base_url".into(), Value::String("https://api.openai.com/v1".into()));
+        existing_table.insert("api_backend".into(), Value::String("chat_completions".into()));
+        existing_table.insert("auth_scheme".into(), Value::String("bearer".into()));
+        existing_table.insert("api_key".into(), Value::String("real-key".into()));
+        let existing = Value::Table(existing_table);
+
+        let p = ProviderConfig {
+            provider_kind: "openai".into(),
+            model_id: "gpt-4o".into(),
+            label: None,
+            api_key: Some("••••".into()), // masked
+            base_url: None,
+            api_backend: None,
+            auth_scheme: None,
+            name: None,
+        };
+        let result = provider_to_table(&p, Some(&existing)).unwrap();
+        let table = result.as_table().unwrap();
+        // Key unchanged (mask is a no-op)
+        assert_eq!(table["api_key"].as_str().unwrap(), "real-key");
+    }
+
+    #[test]
+    fn provider_to_table_empty_key_clears() {
+        let mut existing_table = Map::new();
+        existing_table.insert("base_url".into(), Value::String("https://api.openai.com/v1".into()));
+        existing_table.insert("api_backend".into(), Value::String("chat_completions".into()));
+        existing_table.insert("auth_scheme".into(), Value::String("bearer".into()));
+        existing_table.insert("api_key".into(), Value::String("old-key".into()));
+        let existing = Value::Table(existing_table);
+
+        let p = ProviderConfig {
+            provider_kind: "openai".into(),
+            model_id: "gpt-4o".into(),
+            label: None,
+            api_key: Some("".into()), // clear
+            base_url: None,
+            api_backend: None,
+            auth_scheme: None,
+            name: None,
+        };
+        let result = provider_to_table(&p, Some(&existing)).unwrap();
+        let table = result.as_table().unwrap();
+        assert!(!table.contains_key("api_key"));
+    }
+
+    #[test]
+    fn provider_to_table_custom_missing_field_errors() {
+        let p = ProviderConfig {
+            provider_kind: "custom".into(),
+            model_id: "my-model".into(),
+            label: None,
+            api_key: None,
+            base_url: None,
+            api_backend: None,
+            auth_scheme: None,
+            name: None,
+        };
+        let result = provider_to_table(&p, None);
+        assert!(result.is_err());
+    }
+
+    // --- preset ---
+
+    #[test]
+    fn preset_known_kinds() {
+        assert!(preset("anthropic").is_some());
+        assert!(preset("openai").is_some());
+        assert!(preset("grok").is_some());
+        assert!(preset("deepseek").is_some());
+        assert!(preset("qwen").is_some());
+    }
+
+    #[test]
+    fn preset_custom_is_none() {
+        assert!(preset("custom").is_none());
+        assert!(preset("unknown").is_none());
+    }
+}
