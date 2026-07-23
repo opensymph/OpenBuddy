@@ -19,17 +19,21 @@ import {
   ChevronDown,
   Pencil,
   Trash2,
+  RefreshCw,
+  Loader2,
   type LucideIcon,
 } from "lucide-react";
 import {
   providersList,
   providersSave,
   providersDelete,
+  providersFetchModels,
   internalReload,
   type ApiBackend,
   type AuthScheme,
   type ProviderConfig,
   type ProviderKind,
+  type FetchedModel,
 } from "@/lib/grok-client";
 import {
   AccountSettingsPanel,
@@ -311,14 +315,20 @@ function ModelsSettingsPanel({ onModelsChanged }: { onModelsChanged?: () => void
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSave = async (draft: ProviderConfig, original?: ProviderConfig) => {
+  const handleSave = async (
+    drafts: ProviderConfig[],
+    original?: ProviderConfig,
+  ) => {
     setMsg(null);
     try {
-      // If the model_id changed, delete the old entry first.
-      if (original && original.modelId !== draft.modelId) {
+      // If editing an existing entry, delete the old model_id unless it's
+      // still present in the new drafts (covers both single-edit rename and
+      // batch-save-from-an-existing-entry — the latter previously leaked an
+      // orphan because of a drafts.length === 1 guard).
+      if (original && !drafts.some((d) => d.modelId === original.modelId)) {
         await providersDelete(original.modelId);
       }
-      await providersSave([draft]);
+      await providersSave(drafts);
       // Hot-reload grok's model catalog so the new provider is usable
       // immediately (no restart needed). The grok://models-update event
       // also triggers a refresh in App.tsx as a safety net.
@@ -326,7 +336,11 @@ function ModelsSettingsPanel({ onModelsChanged }: { onModelsChanged?: () => void
       onModelsChanged?.();
       setEditing(null);
       await reload();
-      setMsg({ kind: "ok", text: "已保存，模型列表已刷新。" });
+      const n = drafts.length;
+      setMsg({
+        kind: "ok",
+        text: n > 1 ? `已保存 ${n} 个模型，列表已刷新。` : "已保存，模型列表已刷新。",
+      });
     } catch (e) {
       setMsg({ kind: "err", text: `保存失败：${String(e)}` });
     }
@@ -470,6 +484,7 @@ function ModelsSettingsPanel({ onModelsChanged }: { onModelsChanged?: () => void
         <AddModelEditor
           draft={editing.draft}
           original={editing.original}
+          existingModelIds={new Set(providers.map((p) => p.modelId))}
           onCancel={() => setEditing(null)}
           onSave={handleSave}
         />
@@ -495,25 +510,35 @@ interface EditorDraft {
 function AddModelEditor({
   draft,
   original,
+  existingModelIds,
   onCancel,
   onSave,
 }: {
   draft: EditorDraft;
   original?: ProviderConfig;
+  /** Model ids already saved on disk — shown as "已配置" badges in the fetch list. */
+  existingModelIds: Set<string>;
   onCancel: () => void;
-  onSave: (draft: ProviderConfig, original?: ProviderConfig) => void;
+  onSave: (drafts: ProviderConfig[], original?: ProviderConfig) => void;
 }) {
   const [form, setForm] = useState<EditorDraft>({ ...draft });
   const [showKey, setShowKey] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(draft.providerKind === "custom");
   const [error, setError] = useState<string | null>(null);
 
+  // Remote model discovery state.
+  const [fetching, setFetching] = useState(false);
+  const [fetchedModels, setFetchedModels] = useState<FetchedModel[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
   const preset = PRESETS[form.providerKind];
   const isCustom = form.providerKind === "custom";
+  const hasSelection = selectedIds.size > 0;
 
   // When the provider preset changes, pre-fill the advanced fields from the
   // preset (unless the user had overridden them — for a fresh add we always
-  // adopt the preset).
+  // adopt the preset). Also clears any stale fetch results.
   const handleProviderChange = (kind: ProviderKind) => {
     const p = PRESETS[kind];
     setForm((f) => ({
@@ -524,9 +549,83 @@ function AddModelEditor({
       authScheme: p.authScheme ?? f.authScheme,
     }));
     setShowAdvanced(kind === "custom");
+    setFetchedModels([]);
+    setSelectedIds(new Set());
+    setFetchError(null);
   };
 
+  // Fetch available models from the provider's /models endpoint.
+  const handleFetch = async () => {
+    setFetchError(null);
+    const key = form.apiKey.trim();
+    const baseUrl = form.baseUrl.trim();
+    if (!key) {
+      setFetchError("请先填写 API Key。");
+      return;
+    }
+    if (isCustom && !baseUrl) {
+      setFetchError("自定义提供商必须填写 Base URL。");
+      return;
+    }
+    setFetching(true);
+    try {
+      const models = await providersFetchModels(
+        form.providerKind,
+        key,
+        baseUrl || undefined,
+      );
+      if (models.length === 0) {
+        setFetchError("该端点没有返回任何模型。");
+      }
+      setFetchedModels(models);
+      setSelectedIds(new Set());
+    } catch (e) {
+      setFetchedModels([]);
+      setSelectedIds(new Set());
+      setFetchError(String(e));
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const toggleModel = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === fetchedModels.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(fetchedModels.map((m) => m.id)));
+    }
+  };
+
+  // Build a ProviderConfig for a given model id, sharing the form's
+  // key/url/backend/authScheme. For the api_key: when editing an existing
+  // entry and the user left the key blank, we send undefined (unchanged);
+  // for a fresh add the key is required.
+  const buildConfig = (modelId: string): ProviderConfig => ({
+    providerKind: form.providerKind,
+    modelId,
+    apiKey: form.apiKey.trim() || undefined,
+    baseUrl: form.baseUrl.trim() || undefined,
+    apiBackend: form.apiBackend,
+    authScheme: form.authScheme,
+    name: form.name.trim() || undefined,
+  });
+
   const canSave = (() => {
+    // Batch path: at least one model selected from the fetch list.
+    if (hasSelection) {
+      if (isCustom && !form.baseUrl.trim()) return false;
+      return true;
+    }
+    // Single-model path (manual modelId input).
     if (!form.modelId.trim()) return false;
     if (isCustom && !form.baseUrl.trim()) return false;
     // For a new entry (no original), require an api key OR an existing entry
@@ -539,21 +638,17 @@ function AddModelEditor({
   const handleSaveClick = () => {
     setError(null);
     if (!canSave) {
-      setError("请填写必填字段（模型名称、API Key）。");
+      setError(hasSelection ? "请填写 API Key 和 Base URL。" : "请填写必填字段（模型名称、API Key）。");
       return;
     }
-    const out: ProviderConfig = {
-      providerKind: form.providerKind,
-      modelId: form.modelId.trim(),
-      apiKey: form.apiKey.trim() || undefined,
-      // For preset kinds, send the resolved advanced fields so the backend
-      // writes them. For custom, they're user-provided.
-      baseUrl: form.baseUrl.trim() || undefined,
-      apiBackend: form.apiBackend,
-      authScheme: form.authScheme,
-      name: form.name.trim() || undefined,
-    };
-    onSave(out, original);
+    if (hasSelection) {
+      // Batch: one ProviderConfig per selected model id, sharing key/url.
+      const drafts = [...selectedIds].map(buildConfig);
+      onSave(drafts, original);
+    } else {
+      // Single model (manual entry).
+      onSave([buildConfig(form.modelId.trim())], original);
+    }
   };
 
   return (
@@ -629,15 +724,100 @@ function AddModelEditor({
             </div>
           </div>
 
+          {/* 获取可用模型 */}
+          <div className="models-settings-panel__field">
+            <label className="models-settings-panel__label">从供应商获取模型</label>
+            <div className="models-settings-panel__fetch-row">
+              <button
+                className="cb-button cb-button--secondary cb-button--small models-settings-panel__fetch-btn"
+                onClick={handleFetch}
+                disabled={fetching}
+                type="button"
+              >
+                <span className="cb-button__content">
+                  {fetching ? (
+                    <Loader2 size={13} strokeWidth={2} className="models-settings-panel__spin" />
+                  ) : (
+                    <RefreshCw size={13} strokeWidth={2} style={{ marginRight: 4 }} />
+                  )}
+                  {fetching ? "获取中…" : "获取可用模型"}
+                </span>
+              </button>
+              <span className="models-settings-panel__fetch-hint">
+                自动从 {isCustom ? "Base URL" : preset.label} 的 /models 拉取
+              </span>
+            </div>
+
+            {fetchError && (
+              <div className="models-settings-panel__fetch-error">{fetchError}</div>
+            )}
+
+            {fetchedModels.length > 0 && (
+              <div className="models-settings-panel__fetch-list">
+                <div className="models-settings-panel__fetch-list-header">
+                  <span>
+                    找到 {fetchedModels.length} 个模型
+                    {hasSelection && ` · 已选 ${selectedIds.size}`}
+                  </span>
+                  <button
+                    className="cb-button cb-button--ghost cb-button--small models-settings-panel__fetch-select-all"
+                    onClick={toggleAll}
+                    type="button"
+                  >
+                    {selectedIds.size === fetchedModels.length ? "全不选" : "全选"}
+                  </button>
+                </div>
+                <ul className="models-settings-panel__fetch-items">
+                  {fetchedModels.map((m) => {
+                    const checked = selectedIds.has(m.id);
+                    const configured = existingModelIds.has(m.id);
+                    return (
+                      <li key={m.id}>
+                        <label className="models-settings-panel__fetch-item">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleModel(m.id)}
+                          />
+                          <span className="models-settings-panel__fetch-item-id">{m.id}</span>
+                          {m.ownedBy && (
+                            <span className="models-settings-panel__fetch-item-owner">
+                              {m.ownedBy}
+                            </span>
+                          )}
+                          {configured && (
+                            <span className="models-settings-panel__fetch-item-badge">已配置</span>
+                          )}
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+
           {/* 模型名称 */}
           <div className="models-settings-panel__field">
-            <label className="models-settings-panel__label">模型名称</label>
+            <label className="models-settings-panel__label">
+              模型名称
+              {hasSelection && (
+                <span className="models-settings-panel__label-hint">
+                  已选 {selectedIds.size} 个（将批量保存）
+                </span>
+              )}
+            </label>
             <div className="models-settings-panel__input-shell">
               <input
                 className="models-settings-panel__input"
-                value={form.modelId}
+                value={hasSelection ? "" : form.modelId}
                 onChange={(e) => setForm((f) => ({ ...f, modelId: e.target.value }))}
-                placeholder="如 gpt-4o、claude-sonnet-4-5、deepseek-chat"
+                placeholder={
+                  hasSelection
+                    ? `已勾选 ${selectedIds.size} 个模型，留空即可批量保存`
+                    : "如 gpt-4o、claude-sonnet-4-5、deepseek-chat"
+                }
+                disabled={hasSelection}
                 list="model-suggestions"
               />
               <datalist id="model-suggestions">

@@ -227,6 +227,26 @@ pub async fn write_text_file(
     Ok(safe.to_string_lossy().to_string())
 }
 
+/// Export text to an arbitrary absolute path chosen by the user via the save
+/// dialog (e.g. "导出会话为 Markdown"). Unlike `write_text_file`, this is NOT
+/// restricted to the workspace — the path comes from explicit user consent
+/// in the native save dialog, so it's safe to write anywhere.
+/// Creates parent directories as needed. Overwrites existing files.
+#[tauri::command]
+pub async fn export_text_file(path: String, content: String) -> Result<String, String> {
+    let p = PathBuf::from(&path);
+    if !p.is_absolute() {
+        return Err("导出路径必须是绝对路径".into());
+    }
+    if let Some(parent) = p.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败：{e}"))?;
+        }
+    }
+    std::fs::write(&p, content.as_bytes()).map_err(|e| format!("写入失败：{e}"))?;
+    Ok(p.to_string_lossy().to_string())
+}
+
 /// Browse / open a directory in the file manager (implements frontend's browse_directory).
 #[tauri::command]
 pub async fn browse_directory(path: String) -> Result<(), String> {

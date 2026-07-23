@@ -3,6 +3,7 @@ import { Mic, X, type LucideIcon } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ChevronDownIcon, SendPlaneIcon } from "@/foundation/components/Icon/icons";
 import { ModelSelector, type ModelOption } from "./ModelSelector";
+import { ContextUsagePill } from "./ContextUsagePill";
 import { WorkspacePicker } from "./WorkspacePicker";
 import { PermissionPicker } from "./PermissionPicker";
 import { SlashCommands } from "./SlashCommands";
@@ -56,6 +57,10 @@ export function Composer({
   onSelectExpert,
   onSelectSkill,
   onNavigateConnectors,
+  /** Name of the expert currently bound to this session (shown as badge in footer). */
+  activeExpertName,
+  /** Session id powering the context-usage pill (omit on the home page). */
+  usageSessionId,
 }: {
   streaming: boolean;
   disabled?: boolean;
@@ -112,6 +117,10 @@ export function Composer({
   onSelectSkill?: (skillName: string) => void;
   /** 加号菜单:跳转到连接器管理面板。 */
   onNavigateConnectors?: () => void;
+  /** Name of the expert currently bound to this session (shown as badge in footer). */
+  activeExpertName?: string;
+  /** Session id powering the context-usage pill (omit on the home page). */
+  usageSessionId?: string;
 }) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -439,10 +448,17 @@ export function Composer({
             }}
             onNavigateConnectors={onNavigateConnectors}
           />
+          {activeExpertName && (
+            <span className="wb-composer__expert-badge" title={`当前专家：${activeExpertName}`}>
+              <span className="wb-composer__expert-dot" />
+              {activeExpertName}
+            </span>
+          )}
           {permissionInline && (
             <PermissionPicker onToast={onToast} />
           )}
           <div className="wb-composer__spacer" />
+          {usageSessionId && <ContextUsagePill sessionId={usageSessionId} />}
           {showModelPicker ? (
             <ModelSelector
               modelId={modelId}

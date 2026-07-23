@@ -131,6 +131,65 @@ export interface ExtensionSessionUpdate {
   [key: string]: unknown;
 }
 
+// ---------- context usage (x.ai/session/info + x.ai/session/usage) ----------
+
+/** One itemized context-cost row from grok (skills listing, MCP servers). */
+export interface TokenUsageCategory {
+  /** Display label, e.g. "Skills" or "MCP servers". */
+  label: string;
+  tokens: number;
+  /** Supporting detail, e.g. "21 skills". */
+  detail?: string;
+}
+
+/**
+ * Context-window snapshot from grok's `x.ai/session/info`
+ * (`ContextInfo` in xai-grok-shell, camelCase on the wire).
+ * Note: skills/MCP category estimates overlap `messageTokens` (they're
+ * injected as system-reminders in messages), so category percentages are
+ * approximate — the UI clamps the "其他" remainder at 0.
+ */
+export interface ContextInfo {
+  used: number;
+  /** Context window size of the active model. */
+  total: number;
+  usagePct: number;
+  systemPromptTokens: number;
+  toolDefinitionsCount: number;
+  toolDefinitionsTokens: number;
+  messageCount: number;
+  messageTokens: number;
+  turnCount: number;
+  toolCallCount: number;
+  compactionCount: number;
+  freeTokens: number;
+  autoCompactThresholdPercent?: number;
+  usageCategories?: TokenUsageCategory[];
+}
+
+/** Wire response of `x.ai/session/info` (only the fields the UI consumes). */
+export interface SessionInfoResponse {
+  sessionId: string;
+  cwd: string;
+  model?: string | null;
+  modelDisplayName?: string;
+  context: ContextInfo;
+}
+
+/**
+ * Cumulative session token usage from `x.ai/session/usage` (`PromptUsage`
+ * totals, camelCase on the wire). `inputTokens` includes cache reads, so the
+ * average cache hit rate is `cachedReadTokens / inputTokens`.
+ */
+export interface SessionUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedReadTokens: number;
+  numTurns?: number;
+  usageIsIncomplete?: boolean;
+}
+
 export type SessionUpdate =
   | AgentMessageChunk
   | AgentThoughtChunk
@@ -216,6 +275,10 @@ export interface SessionSummary {
   archived?: boolean;
   /** Model id bound to this session, if recorded in summary.json. */
   currentModelId?: string;
+  /** Expert id bound to this session (OpenBuddy-only state). */
+  expertId?: string;
+  /** Expert display name (OpenBuddy-only state). */
+  expertName?: string;
   /** Lifecycle status for sidebar task filtering. Absent = "completed". */
   status?: SessionStatus;
 }
@@ -633,6 +696,12 @@ export interface ExpertItem {
   avatarLocal?: string;
   /** COS fallback URL (used if the local file is missing). */
   avatarUrl?: string;
+  /** Plugin directory name — used to locate `agents/<agentName>.md`. */
+  plugin?: string;
+  /** Agent markdown filename stem (lead agent for teams). */
+  agentName?: string;
+  /** Quick prompts ("试试这样问我") from the manifest. */
+  quickPrompts?: string[];
 }
 
 /** Catalog payload returned by `experts_load`. */

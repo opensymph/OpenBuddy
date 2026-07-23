@@ -29,6 +29,12 @@ pub struct SessionSummary {
     /// Model id bound to this session, if recorded in summary.json.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_model_id: Option<String>,
+    /// Expert id bound to this session (OpenBuddy-only state).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expert_id: Option<String>,
+    /// Expert display name (OpenBuddy-only state).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expert_name: Option<String>,
 }
 
 /// Subset of grok's `Summary` struct (see `xai-grok-shell/src/session/persistence.rs:790`).
@@ -150,6 +156,8 @@ pub fn list_sessions(cwd: &str) -> Vec<SessionSummary> {
                 pinned: None,
                 archived: None,
                 current_model_id: s.current_model_id.clone(),
+                expert_id: None,
+                expert_name: None,
             });
         }
     }
@@ -158,11 +166,16 @@ pub fn list_sessions(cwd: &str) -> Vec<SessionSummary> {
     let state = crate::meta::read_state();
     let pinned = state.pinned_set();
     let archived = state.archived_set();
+    let experts = state.expert_map();
     // Archived sessions are hidden from the sidebar entirely.
     out.retain(|entry| !archived.contains(&entry.session_id));
     for entry in &mut out {
         entry.pinned = Some(pinned.contains(&entry.session_id));
         entry.archived = Some(false);
+        if let Some(binding) = experts.get(&entry.session_id) {
+            entry.expert_id = Some(binding.expert_id.clone());
+            entry.expert_name = Some(binding.expert_name.clone());
+        }
     }
     // Sort: pinned first, then by updated_at descending (falling back to the
     // session_id, which is a UUIDv7 — roughly chronological).

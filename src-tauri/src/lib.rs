@@ -51,6 +51,11 @@ pub fn run() {
             commands::grok_delete_session,
             commands::grok_set_session_pinned,
             commands::grok_set_session_archived,
+            commands::grok_set_session_expert,
+            commands::grok_clear_session_expert,
+            // context usage pill (x.ai/session/info + x.ai/session/usage)
+            commands::grok_session_info,
+            commands::grok_session_usage,
             // BYOK providers (~/.grok/config.toml [model.*])
             providers::providers_list,
             providers::providers_save,
@@ -90,6 +95,8 @@ pub fn run() {
             experts::experts_load,
             experts::experts_thumbnail,
             experts::experts_image_bytes,
+            experts::experts_read_agent_prompt,
+            experts::experts_link_agents,
             // grok admin: memory / search / rewind / commands / plan / tasks / reload
             grok_admin::memory_list,
             grok_admin::memory_get,

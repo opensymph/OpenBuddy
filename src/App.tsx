@@ -20,6 +20,8 @@ import { useSessionStore } from "./stores/session-store";
 import { useSessionsStore } from "./stores/sessions-store";
 import { usePermissionStore } from "./stores/permission-store";
 import { useQuestionStore } from "./stores/question-store";
+import { usePendingExpertStore } from "./stores/pending-expert-store";
+import { useContextUsageStore } from "./stores/context-usage-store";
 import { TopbarTitle } from "./components/TopbarTitle";
 import {
   grokInit,
@@ -31,6 +33,7 @@ import {
   grokListWorkspaces,
   grokRenameSession,
   grokSetModel,
+  grokSetSessionExpert,
   grokAuthStatus,
   providersList,
   notificationAppend,
@@ -41,6 +44,11 @@ import {
 import type { AgentEntry } from "./lib/types";
 import { useProjectsStore, type ProjectMeta } from "./stores/projects-store";
 import { IS_MACOS } from "./lib/platform";
+
+/** Hidden markers wrapping the expert persona in the text sent to grok.
+ *  The UI strips these (and everything between them) from user messages. */
+export const EXPERT_PERSONA_BEGIN = "<!--EXPERT_PERSONA_BEGIN-->";
+export const EXPERT_PERSONA_END = "<!--EXPERT_PERSONA_END-->";
 
 /**
  * Derive a short sidebar title from the user's first message.
@@ -57,6 +65,21 @@ function deriveTitle(text: string): string {
   const words = clean.split(/\s+/).slice(0, 10).join(" ");
   if (!words) return "新会话";
   return words.length > 40 ? words.slice(0, 40) + "…" : words;
+}
+
+/**
+ * Strip YAML frontmatter (`---\n...\n---`) from a markdown agent file and
+ * return only the body (the system prompt content).
+ */
+function extractMarkdownBody(raw: string): string {
+  const trimmed = raw.trimStart();
+  if (!trimmed.startsWith("---")) return raw.trim();
+  const afterOpen = trimmed.indexOf("\n");
+  if (afterOpen === -1) return raw.trim();
+  const rest = trimmed.slice(afterOpen + 1);
+  const closeIdx = rest.search(/\n---\s*(\n|$)/);
+  if (closeIdx === -1) return raw.trim();
+  return rest.slice(closeIdx + 1).replace(/^\n---\s*/, "").trim();
 }
 
 export default function App() {
@@ -162,6 +185,8 @@ function Shell() {
             sessionStore.getState().markComplete(p);
             // Update sidebar status so the task filter reflects the completion.
             sessionsStore.getState().upsert({ sessionId: p.sessionId, status: "completed" });
+            // Refresh the composer context-usage pill after each turn.
+            void useContextUsageStore.getState().refresh(p.sessionId);
             void notificationAppend(
               "session_complete",
               `会话完成（${p.stopReason ?? "end_turn"}）`,
@@ -365,23 +390,33 @@ function Shell() {
       const sessionId = await grokNewSession(cwd, currentModelId);
       console.log('[OpenBuddy] New session created:', sessionId);
       sessionsStore.getState().setCurrent(sessionId);
-      // 从占位视图（如「本地助理」页）发起会话后，切到 ChatView 看回复。
       setPlaceholderView(null);
-      // Placeholder title derived from the user's first message. grok will
-      // push the LLM-generated title via the grok://summary event
-      // (SessionSummaryGenerated) within a few seconds, which our onSummary
-      // handler applies to the same store entry, overriding this fallback.
       sessionsStore.getState().upsert({ sessionId, title: deriveTitle(text), cwd, status: "working" });
       sessionStore.getState().setSession(sessionId);
+
+      // Check for pending expert — inject persona invisibly.
+      const pending = usePendingExpertStore.getState().expert;
+      let textForGrok = text;
+      if (pending && pending.prompt) {
+        // Wrap persona in hidden markers. grok sees it as instructions;
+        // MessageItem strips it from display on history replay.
+        textForGrok = `${EXPERT_PERSONA_BEGIN}\n${pending.prompt}\n${EXPERT_PERSONA_END}\n\n${text}`;
+        // Bind expert to session for persistence + UI badge.
+        grokSetSessionExpert(sessionId, pending.expertId, pending.name, pending.source)
+          .catch(() => {});
+        sessionsStore.getState().upsert({ sessionId, expertId: pending.expertId, expertName: pending.name });
+        usePendingExpertStore.getState().clear();
+      }
+
+      // UI shows only the user's visible text.
       sessionStore.getState().pushUser(text);
       sessionStore.getState().startStreaming();
       console.log('[OpenBuddy] Sending prompt to grok...');
-      await grokSend(sessionId, text);
+      await grokSend(sessionId, textForGrok);
       console.log('[OpenBuddy] Prompt sent successfully, waiting for events...');
     } catch (e) {
       console.error('[OpenBuddy] handleSendNew error:', e);
       sessionStore.getState().setError(String(e));
-      // Mark the sidebar entry as failed so the task filter can find it.
       const sid = sessionStore.getState().sessionId;
       if (sid) sessionsStore.getState().upsert({ sessionId: sid, status: "failed" });
     }
@@ -475,6 +510,12 @@ function Shell() {
     sessionStore.getState().reset();
   };
 
+  /** Navigate to home page without resetting session state (used after expert summon). */
+  const handleGoHome = () => {
+    setPlaceholderView(null);
+    sessionsStore.getState().setCurrent(null);
+  };
+
   // 空间节点展开/折叠: 记录展开态, 首次展开时懒加载该 cwd 的子会话。
   const handleToggleWorkspace = async (cwd: string, next: boolean) => {
     sessionsStore.getState().setExpanded(cwd, next);
@@ -501,6 +542,8 @@ function Shell() {
       // Load with the session's OWN cwd (independent sessions have cwd="").
       // Viewing a 空间 child must NOT re-aim the new-session target directory.
       await grokLoadSession(sessionId, sessionCwd ?? "");
+      // Populate the context-usage pill for the freshly loaded session.
+      void useContextUsageStore.getState().refresh(sessionId);
     } catch (e) {
       sessionStore.getState().setError(String(e));
     } finally {
@@ -535,39 +578,28 @@ function Shell() {
     );
   };
 
-  // Start a new chat guided by an expert/assistant. grok has no session-level
-  // "switch agent" ACP method, so we open a fresh empty session and seed it
-  // with a one-shot system-style preamble built from the agent's description.
-  // The user can then type their actual task; grok will honor the framing.
-  const handleStartWithExpert = async (agent: AgentEntry) => {
-    setPlaceholderView(null);
-    try {
-      const cwd = cwdRef.current;
-      const sessionId = await grokNewSession(cwd, currentModelId);
-      sessionsStore.getState().setCurrent(sessionId);
-      sessionsStore.getState().upsert({ sessionId, title: agent.name, cwd, status: "working" });
-      sessionStore.getState().setSession(sessionId);
-      // Send a quiet preamble so grok adopts the agent's persona for this turn.
-      // We don't display it as a user bubble — it's scaffolding. The simplest
-      // implementation is to prepend it to the user's first real message; we
-      // achieve that here by pushing a non-streaming seed and letting the user
-      // continue. (If grok had a session-level systemPrompt meta field we'd
-      // use that instead.)
-      const preamble =
-        `（本次对话使用助理「${agent.name}」：${agent.description ?? "通用助理"}）`;
-      sessionStore.getState().pushUser(preamble);
-      sessionStore.getState().startStreaming();
-      await grokSend(sessionId, preamble);
-    } catch (e) {
-      sessionStore.getState().setError(String(e));
-      const sid = sessionStore.getState().sessionId;
-      if (sid) sessionsStore.getState().upsert({ sessionId: sid, status: "failed" });
-      showToast(`启动助理失败：${String(e).replace(/^Error:\s*/, "")}`);
-    }
+  // Select an expert from the + menu (chat or home composer). Instead of
+  // immediately creating a session, set the pending expert and go home so the
+  // user can type their message with the expert badge visible.
+  const handleStartWithExpert = (
+    agent: AgentEntry,
+    _meta?: { expertId?: string; source?: string },
+  ) => {
+    const promptBody = agent.raw
+      ? extractMarkdownBody(agent.raw)
+      : agent.description ?? "";
+    usePendingExpertStore.getState().set({
+      name: agent.name,
+      prompt: promptBody,
+      description: agent.description ?? agent.name,
+      expertId: _meta?.expertId ?? agent.name,
+      source: _meta?.source ?? agent.scope ?? "local",
+    });
+    handleGoHome();
   };
 
   // Discover launcher: open a new session and send the wizard's prompt. If an
-  // agent is chosen, prepend its persona as a preamble (same pattern as
+  // agent is chosen, prepend its full persona as a preamble (same pattern as
   // handleStartWithExpert). Closes the placeholder view so the chat shows.
   const handleLaunchDiscover = async (prompt: string, agent?: AgentEntry) => {
     setPlaceholderView(null);
@@ -582,9 +614,25 @@ function Shell() {
         status: "working",
       });
       sessionStore.getState().setSession(sessionId);
-      const body = agent
-        ? `（使用助理「${agent.name}」：${agent.description ?? ""}）\n\n${prompt}`
-        : prompt;
+      let body: string;
+      if (agent) {
+        const promptBody = agent.raw
+          ? extractMarkdownBody(agent.raw)
+          : agent.description ?? "";
+        body = [
+          `【角色设定 — ${agent.name}】`,
+          `从现在开始，你将以下述专家身份进行本次对话。请严格遵循角色定义。`,
+          ``,
+          promptBody,
+          ``,
+          `---`,
+          `用户的第一个问题：`,
+          ``,
+          prompt,
+        ].join("\n");
+      } else {
+        body = prompt;
+      }
       sessionStore.getState().pushUser(body);
       sessionStore.getState().startStreaming();
       await grokSend(sessionId, body);
@@ -727,6 +775,11 @@ function Shell() {
                   </>
                 )}
                 <TopbarTitle title={currentTitle} onRename={handleRenameTitle} />
+                {currentEntry?.expertName && (
+                  <span className="expert-badge" data-tip={`专家：${currentEntry.expertName}`}>
+                    🤖 {currentEntry.expertName}
+                  </span>
+                )}
                 {currentSessionId && (
                   <TopbarActions
                     sessionId={currentSessionId}
@@ -781,6 +834,7 @@ function Shell() {
               label={placeholderView}
               onPlaceholder={handlePlaceholder}
               onNavigate={handleNavigate}
+              onGoHome={handleGoHome}
               onStartWithExpert={handleStartWithExpert}
               onToast={showToast}
               cwd={cwdRef.current}

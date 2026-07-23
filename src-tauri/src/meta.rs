@@ -11,12 +11,24 @@
 //! we can extend it later (starred, hidden, custom tags, …) without a
 //! migration.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 const STATE_VERSION: u32 = 1;
+
+/// Expert binding for a session — records which expert was summoned.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpertBinding {
+    /// Expert id (marketplace id or local agent name).
+    pub expert_id: String,
+    /// Display name shown in the UI badge.
+    pub expert_name: String,
+    /// "marketplace" | "local".
+    pub source: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenBuddyState {
@@ -28,6 +40,9 @@ pub struct OpenBuddyState {
     /// Session ids the user archived (hidden from the sidebar).
     #[serde(default)]
     pub archived_sessions: Vec<String>,
+    /// Expert bindings: session_id → ExpertBinding.
+    #[serde(default)]
+    pub expert_sessions: HashMap<String, ExpertBinding>,
 }
 
 impl Default for OpenBuddyState {
@@ -36,6 +51,7 @@ impl Default for OpenBuddyState {
             version: STATE_VERSION,
             pinned_sessions: Vec::new(),
             archived_sessions: Vec::new(),
+            expert_sessions: HashMap::new(),
         }
     }
 }
@@ -51,6 +67,11 @@ impl OpenBuddyState {
     /// filtering the session list.
     pub fn archived_set(&self) -> HashSet<String> {
         self.archived_sessions.iter().cloned().collect()
+    }
+
+    /// Expert bindings map for merging into the session list.
+    pub fn expert_map(&self) -> &HashMap<String, ExpertBinding> {
+        &self.expert_sessions
     }
 }
 
@@ -129,6 +150,28 @@ pub fn set_archived(session_id: &str, archived: bool) -> Result<bool, String> {
     }
     write_state(&state)?;
     Ok(archived)
+}
+
+/// Bind an expert to a session. Overwrites any previous binding for the same
+/// session id. Returns `true` on success.
+pub fn set_expert(session_id: &str, binding: ExpertBinding) -> Result<bool, String> {
+    let mut state = read_state();
+    state
+        .expert_sessions
+        .insert(session_id.to_string(), binding);
+    write_state(&state)?;
+    Ok(true)
+}
+
+/// Remove the expert binding for a session. Returns `true` if a binding was
+/// removed, `false` if there was none.
+pub fn clear_expert(session_id: &str) -> Result<bool, String> {
+    let mut state = read_state();
+    let removed = state.expert_sessions.remove(session_id).is_some();
+    if removed {
+        write_state(&state)?;
+    }
+    Ok(removed)
 }
 
 // ---------- unit tests ----------

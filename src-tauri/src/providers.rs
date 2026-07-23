@@ -451,6 +451,119 @@ pub fn providers_delete(model_id: String) -> Result<(), String> {
     Ok(())
 }
 
+// ---------- remote model discovery ----------
+
+/// One model entry returned by a provider's `GET /models` endpoint.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchedModel {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owned_by: Option<String>,
+}
+
+/// Resolve the effective base_url for a fetch, given the provider kind and an
+/// optional override. Presets provide the default; `custom` requires the caller
+/// to supply `base_url`.
+fn resolve_fetch_base_url(kind: &str, base_url: &Option<String>) -> Result<String, String> {
+    if let Some(url) = base_url {
+        let trimmed = url.trim().trim_end_matches('/');
+        if trimmed.is_empty() {
+            return Err("base_url 不能为空".into());
+        }
+        return Ok(trimmed.to_string());
+    }
+    match preset(kind) {
+        Some(p) => Ok(p.base_url.trim_end_matches('/').to_string()),
+        None => Err("自定义提供商必须填写 Base URL".into()),
+    }
+}
+
+/// Fetch the list of available models from a provider's `/models` endpoint.
+///
+/// Works for any OpenAI-compatible endpoint (`GET {base_url}/models` returning
+/// `{"data":[{"id":"...","owned_by":"..."}]}`) and for Anthropic (same path,
+/// but requires `anthropic-version` header + `x-api-key` auth).
+///
+/// The `api_key` is used only for this single request — it is never persisted
+/// or logged.
+#[tauri::command]
+pub async fn providers_fetch_models(
+    provider_kind: String,
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<Vec<FetchedModel>, String> {
+    let key = api_key.trim();
+    if key.is_empty() {
+        return Err("请先填写 API Key".into());
+    }
+
+    let base = resolve_fetch_base_url(&provider_kind, &base_url)?;
+    let auth_scheme = preset(&provider_kind)
+        .map(|p| p.auth_scheme.to_string())
+        .unwrap_or_else(|| "bearer".into());
+
+    let url = format!("{base}/models");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败：{e}"))?;
+
+    let mut req = client.get(&url);
+    // Auth header per the provider's scheme.
+    req = match auth_scheme.as_str() {
+        "x_api_key" => req
+            .header("x-api-key", key)
+            .header("anthropic-version", "2023-06-01"),
+        _ => req.header("Authorization", format!("Bearer {key}")),
+    };
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        let snippet = if body.len() > 200 {
+            format!("{}…", &body[..body.char_indices().take(200).last().map(|(i, _)| i).unwrap_or(200)])
+        } else {
+            body
+        };
+        return Err(format!("API 返回 {status}：{snippet}"));
+    }
+
+    // Parse the OpenAI-compatible `{ "data": [{ "id": "…", "owned_by": "…" }] }` shape.
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败（非 JSON）：{e}"))?;
+
+    let data = json
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or_else(|| "响应缺少 data 数组（该端点可能不支持 /models 列表）".to_string())?;
+
+    let models = data
+        .iter()
+        .filter_map(|item| {
+            let id = item.get("id").and_then(|v| v.as_str())?.to_string();
+            if id.is_empty() {
+                return None;
+            }
+            let owned_by = item
+                .get("owned_by")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            Some(FetchedModel { id, owned_by })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(models)
+}
+
 // ---------- unit tests ----------
 
 #[cfg(test)]

@@ -75,6 +75,12 @@ fn user_agents_dir() -> PathBuf {
     grok_home().join("agents")
 }
 
+/// Public accessor for the user-scope agents directory (used by experts.rs
+/// to link team member agents for grok discovery).
+pub fn user_agents_dir_pub() -> PathBuf {
+    user_agents_dir()
+}
+
 /// Project-level agents dir for a cwd: `<cwd>/.grok/agents/`. (We don't walk
 /// up to the git root to keep the scan cheap; users can put agents in
 /// `~/.grok/agents/` for cross-project access.)

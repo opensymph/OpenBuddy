@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSessionStore, type ToolCallView } from "@/stores/session-store";
 import { useSessionsStore } from "@/stores/sessions-store";
 import { createMarkdownHostConfig } from "@/lib/markdown-host";
+import { rewindExecute, rewindPoints } from "@/lib/grok-client";
 import {
   collectSessionArtifacts,
   findToolCall,
@@ -58,7 +59,6 @@ export function ChatView({
   const streaming = useSessionStore((s) => s.streaming);
   const streamingMessageId = useSessionStore((s) => s.streamingMessageId);
   const error = useSessionStore((s) => s.error);
-  const usage = useSessionStore((s) => s.usage);
   const plan = useSessionStore((s) => s.plan);
   const sessionId = useSessionStore((s) => s.sessionId);
   // 按会话持久化的输入草稿:切到本会话时回填,每次输入回写 store。
@@ -67,7 +67,65 @@ export function ChatView({
   const draft = useSessionsStore((s) =>
     sessionId ? s.drafts[sessionId] ?? "" : ""
   );
+  // Read the expert name bound to the current session (for the composer badge).
+  const activeExpertName = useSessionsStore((s) => {
+    if (!sessionId) return undefined;
+    const entry = s.independent.find((x) => x.sessionId === sessionId)
+      ?? Object.values(s.workspaceSessions).flat().find((x) => x.sessionId === sessionId);
+    return entry?.expertName;
+  });
   const [planOpen, setPlanOpen] = useState(false);
+
+  // ---- 消息"编辑重发":把消息文本回填到输入框 ----
+  const [resendText, setResendText] = useState<string | undefined>(undefined);
+  const [resendNonce, setResendNonce] = useState(0);
+  const handleEditResend = useCallback((text: string) => {
+    if (!text.trim()) return;
+    setResendText(text);
+    setResendNonce((n) => n + 1);
+  }, []);
+
+  // ---- 消息级"重试":回溯到最后一条用户 prompt 并重新发送（重新生成回复） ----
+  const [retrying, setRetrying] = useState(false);
+  const handleRetry = useCallback(async () => {
+    if (!sessionId || streaming || retrying) return;
+    // Find the last user message text.
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUserMsg) {
+      onToast?.("没有可重试的消息");
+      return;
+    }
+    const userText = lastUserMsg.parts
+      .filter((p) => p.kind === "text")
+      .map((p) => p.text)
+      .join("\n");
+    if (!userText.trim()) return;
+
+    setRetrying(true);
+    try {
+      // Rewind the conversation to the last user prompt (conversation only —
+      // don't touch files), which drops the assistant turn we're regenerating.
+      const points = await rewindPoints(sessionId);
+      if (points.length === 0) {
+        // Nothing to rewind — bailing here is important: without a rewind we
+        // would just append a duplicate user turn on top of the old one.
+        onToast?.("没有可回退的点，无法重试");
+        return;
+      }
+      // Pick the latest point explicitly by promptIndex — don't rely on the
+      // points array being sorted ascending (the order isn't documented).
+      const lastPoint = points.reduce((a, b) =>
+        b.promptIndex > a.promptIndex ? b : a,
+      );
+      await rewindExecute(sessionId, lastPoint.promptIndex, "conversation", true);
+      onRewound?.();
+      onSend(userText);
+    } catch (e) {
+      onToast?.(`重试失败：${String(e).replace(/^Error:\s*/, "")}`);
+    } finally {
+      setRetrying(false);
+    }
+  }, [sessionId, streaming, retrying, messages, onSend, onRewound, onToast]);
 
   // ---- Phase 2/3: tool detail + artifacts side panel ----
   const [panelOpen, setPanelOpen] = useState(false);
@@ -153,7 +211,11 @@ export function ChatView({
             </button>
             {planOpen && (
               <div className="chatview__plan-panel">
-                <PlanPanel />
+                <PlanPanel
+                  sessionId={sessionId ?? undefined}
+                  onSend={onSend}
+                  onToast={onToast}
+                />
               </div>
             )}
           </>
@@ -184,26 +246,34 @@ export function ChatView({
 
         <div className="chatview__scroll" ref={scrollRef}>
           <div className="chatview__inner">
-            {messages.map((m) => (
-              <MessageItem
-                key={m.id}
-                message={m}
-                streaming={streaming && m.id === streamingMessageId}
-                markdownConfig={markdownConfig}
-                cwd={cwd}
-                onToast={onToast}
-                onOpenTool={handleOpenTool}
-              />
-            ))}
+            {messages.map((m, idx) => {
+              // 重试只对最后一条 assistant 消息开放（重试中间消息没有语义）。
+              const isLastAssistant =
+                m.role === "assistant" && idx === messages.length - 1;
+              return (
+                <MessageItem
+                  key={m.id}
+                  message={m}
+                  streaming={streaming && m.id === streamingMessageId}
+                  markdownConfig={markdownConfig}
+                  cwd={cwd}
+                  onToast={onToast}
+                  onOpenTool={handleOpenTool}
+                  onEditResend={handleEditResend}
+                  onRetry={
+                    isLastAssistant && !streaming && m.complete
+                      ? handleRetry
+                      : undefined
+                  }
+                />
+              );
+            })}
           </div>
         </div>
         <div className="chatview__footer">
           {/* Inline permission / question cards: session-scoped, never block sidebar. */}
           <PermissionInlineCard sessionId={sessionId} />
           <QuestionInlineCard sessionId={sessionId} />
-          {streaming && usage.totalTokens ? (
-            <div className="chatview__tokens">{usage.totalTokens} tokens</div>
-          ) : null}
           {/* Rewind / fork: 会话级工具，放在输入框正上方（不再漂浮到左上角挡标题栏）。 */}
           {sessionId && !streaming && (
             <RewindBar
@@ -232,9 +302,13 @@ export function ChatView({
             onDraftChange={
               sessionId ? (t) => setDraft(sessionId, t) : undefined
             }
+            externalText={resendText}
+            externalTextNonce={resendNonce}
             onSelectMode={onSelectMode}
             onSelectExpert={onSelectExpert}
             onNavigateConnectors={onNavigateConnectors}
+            activeExpertName={activeExpertName}
+            usageSessionId={sessionId ?? undefined}
           />
         </div>
       </div>

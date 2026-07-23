@@ -65,6 +65,17 @@ pub struct ExpertItem {
     /// COS fallback URL (used if the local file is missing).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
+    /// Plugin directory name (e.g. "accessibility-auditor") — used to locate
+    /// the agent prompt file at `<root>/<plugin>/agents/<agent_name>.md`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
+    /// Agent markdown filename stem (e.g. "accessibility-auditor") — the lead
+    /// agent for team experts, or the sole agent for single-agent experts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+    /// Quick prompts ("试试这样问我") from the manifest.
+    #[serde(default)]
+    pub quick_prompts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -323,7 +334,8 @@ fn load_featured_scenes(root: &Path) -> Vec<FeaturedSceneOut> {
 fn build_expert(root: &Path, e: &Value) -> Option<ExpertItem> {
     let id = e.get("id")?.as_str()?.to_string();
     let plugin = e.get("plugin").and_then(|v| v.as_str()).unwrap_or("");
-    let local_avatar = read_plugin_json(root, plugin).and_then(|pj| {
+    let pj = read_plugin_json(root, plugin);
+    let local_avatar = pj.as_ref().and_then(|pj| {
         let rel = pj.get("avatar")?.as_str()?.to_string();
         let abs = root.join(plugin).join(&rel);
         if abs.is_file() {
@@ -332,6 +344,11 @@ fn build_expert(root: &Path, e: &Value) -> Option<ExpertItem> {
             None
         }
     });
+    // Resolve the lead agent name from plugin.json (agentName field).
+    let agent_name = pj
+        .as_ref()
+        .and_then(|pj| pj.get("agentName").and_then(|v| v.as_str()))
+        .map(|s| s.to_string());
     let avatar_url = e
         .get("avatar")
         .and_then(|v| v.as_str())
@@ -392,6 +409,13 @@ fn build_expert(root: &Path, e: &Value) -> Option<ExpertItem> {
             .map(str::to_string),
         avatar_local: local_avatar,
         avatar_url,
+        plugin: if plugin.is_empty() { None } else { Some(plugin.to_string()) },
+        agent_name,
+        quick_prompts: e
+            .get("quickPrompts")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().map(loc).filter(|s| !s.is_empty()).take(5).collect())
+            .unwrap_or_default(),
     })
 }
 
@@ -501,4 +525,107 @@ pub async fn experts_image_bytes(path: String) -> Result<String, String> {
         _ => "application/octet-stream",
     };
     Ok(format!("data:{mime};base64,{}", b64(&bytes)))
+}
+
+// ---------- agent prompt reading ----------
+
+/// Read the full agent prompt markdown from an expert's package directory.
+///
+/// Resolves `<root>/<plugin>/agents/<agent_name>.md`. If the exact file is
+/// missing, falls back to scanning `agents/` for a single `.md` file (common
+/// for single-agent experts where the filename might differ slightly).
+///
+/// Returns the full file content (frontmatter + body). The frontend strips the
+/// frontmatter before injecting into the conversation.
+#[tauri::command]
+pub async fn experts_read_agent_prompt(
+    root: String,
+    plugin: String,
+    agent_name: String,
+) -> Result<String, String> {
+    let root = PathBuf::from(&root);
+    let agents_dir = root.join(&plugin).join("agents");
+
+    // Primary: exact match.
+    let primary = agents_dir.join(format!("{agent_name}.md"));
+    if primary.is_file() {
+        return std::fs::read_to_string(&primary)
+            .map_err(|e| format!("读取 agent prompt 失败：{e}"));
+    }
+
+    // Fallback: scan agents/ for any .md file (pick the first one).
+    if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("md") {
+                return std::fs::read_to_string(&path)
+                    .map_err(|e| format!("读取 agent prompt 失败：{e}"));
+            }
+        }
+    }
+
+    Err(format!(
+        "未找到 agent prompt 文件：{}/agents/{agent_name}.md",
+        plugin
+    ))
+}
+
+// ---------- team agent linking ----------
+
+/// Copy a team expert's `agents/*.md` files into `~/.grok/agents/` so that
+/// grok's sub-agent discovery can find them by bare name when the lead agent
+/// calls the Task tool. Returns the number of files linked.
+///
+/// This is needed because grok only scans `~/.grok/agents/` and
+/// `<cwd>/.grok/agents/` — it doesn't know about the WorkBuddy expert root.
+/// By copying the member definitions, the lead agent's orchestration
+/// instructions (e.g. "spawn macro-strategist") resolve correctly.
+#[tauri::command]
+pub async fn experts_link_agents(
+    root: String,
+    plugin: String,
+) -> Result<u32, String> {
+    let root = PathBuf::from(&root);
+    let agents_dir = root.join(&plugin).join("agents");
+    if !agents_dir.is_dir() {
+        return Err(format!("agents 目录不存在：{}/agents", plugin));
+    }
+
+    // Target: ~/.grok/agents/
+    let target_dir = crate::agents_store::user_agents_dir_pub();
+    std::fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("创建 agents 目录失败：{e}"))?;
+
+    let mut count = 0u32;
+    let entries = std::fs::read_dir(&agents_dir)
+        .map_err(|e| format!("读取 agents 目录失败：{e}"))?;
+    for entry in entries.flatten() {
+        let src = entry.path();
+        if !src.is_file() {
+            continue;
+        }
+        let ext = src.extension().and_then(|e| e.to_str());
+        if ext != Some("md") {
+            continue;
+        }
+        let filename = src.file_name().unwrap().to_owned();
+        let dst = target_dir.join(&filename);
+        // Only copy if missing or source is newer (avoid redundant writes).
+        let should_copy = if dst.is_file() {
+            let src_mtime = std::fs::metadata(&src).and_then(|m| m.modified()).ok();
+            let dst_mtime = std::fs::metadata(&dst).and_then(|m| m.modified()).ok();
+            match (src_mtime, dst_mtime) {
+                (Some(s), Some(d)) => s > d,
+                _ => true,
+            }
+        } else {
+            true
+        };
+        if should_copy {
+            std::fs::copy(&src, &dst)
+                .map_err(|e| format!("复制 {} 失败：{e}", filename.to_string_lossy()))?;
+        }
+        count += 1;
+    }
+    Ok(count)
 }

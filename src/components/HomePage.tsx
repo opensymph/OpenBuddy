@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Composer } from "./Composer";
 import type { ModelOption } from "./ModelSelector";
@@ -7,6 +7,7 @@ import type { AgentEntry } from "@/lib/types";
 import { MoreIcon } from "@/foundation/components/Icon/icons";
 import { useHorizontalScroll } from "./use-horizontal-scroll";
 import { useSessionsStore, HOME_DRAFT_KEY } from "@/stores/sessions-store";
+import { usePendingExpertStore } from "@/stores/pending-expert-store";
 import {
   COLLAPSED_VISIBLE_COUNT,
   HOME_MODES,
@@ -84,6 +85,22 @@ export function HomePage({
   // 首页草稿(哨兵 key):用户离开首页再回来,未发送的字还在。
   const homeDraft = useSessionsStore((s) => s.drafts[HOME_DRAFT_KEY] ?? "");
   const setDraft = useSessionsStore((s) => s.setDraft);
+
+  // Pending expert (set after "召唤" in the detail modal).
+  const pendingExpert = usePendingExpertStore((s) => s.expert);
+  const pendingHandledRef = useRef<string | null>(null);
+
+  // When a pending expert arrives with a quickPrompt, pre-fill the composer.
+  useEffect(() => {
+    if (!pendingExpert) return;
+    // Only auto-fill once per expert (avoid re-filling if user clears it).
+    if (pendingHandledRef.current === pendingExpert.expertId) return;
+    pendingHandledRef.current = pendingExpert.expertId;
+    if (pendingExpert.quickPrompt) {
+      fillComposer(pendingExpert.quickPrompt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingExpert]);
 
   const mode = getMode(modeId);
   const categories = mode.categories;
@@ -313,6 +330,7 @@ export function HomePage({
             }}
             onSelectExpert={onSelectExpert}
             onNavigateConnectors={onNavigateConnectors}
+            activeExpertName={pendingExpert?.name}
           />
         </section>
       </div>

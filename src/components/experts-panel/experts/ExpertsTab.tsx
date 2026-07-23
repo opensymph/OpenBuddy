@@ -5,15 +5,17 @@ import {
   FolderOpenIcon, RefreshCwIcon,
 } from "@/foundation/components/Icon/icons";
 import {
-  agentsDelete, agentsList, expertsDefaultRoot, expertsLoad,
+  agentsDelete, agentsList, expertsDefaultRoot, expertsLoad, expertsReadAgentPrompt, expertsLinkAgents,
 } from "@/lib/grok-client";
 import type { AgentEntry, ExpertCatalog, ExpertItem, FeaturedScene } from "@/lib/types";
 import { FEATURED_SCENES } from "../data/featured-scenes";
 import { Chip, SegmentTabs } from "../shared/ui";
 import { ThumbImg } from "../shared/ThumbImg";
 import { ExpertCard } from "./ExpertCard";
+import { ExpertDetailModal } from "./ExpertDetailModal";
 import { FeaturedScenes } from "./FeaturedScenes";
 import { MyExpertsEmpty } from "./MyExpertsEmpty";
+import { usePendingExpertStore } from "@/stores/pending-expert-store";
 
 type ListTab = "expert" | "team";
 type Sort = "popular" | "newest";
@@ -25,16 +27,20 @@ const DEFAULT_PICK = "E:/Grok/agents";
 
 interface Props {
   pills: React.ReactNode;
-  onSummon: (expert: ExpertItem) => void;
+  /** Navigate back to the home page (after summoning an expert). */
+  onGoHome?: () => void;
   onToast?: (message: string) => void;
 }
 
-export function ExpertsTab({ pills, onSummon, onToast }: Props) {
+export function ExpertsTab({ pills, onGoHome, onToast }: Props) {
   const [view, setView] = useState<"center" | "my">("center");
   const [listTab, setListTab] = useState<ListTab>("expert");
   const [sort, setSort] = useState<Sort>("popular");
   const [cat, setCat] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  /** Expert whose detail modal is currently open. */
+  const [modalExpert, setModalExpert] = useState<ExpertItem | null>(null);
+  const setPendingExpert = usePendingExpertStore((s) => s.set);
 
   const [root, setRoot] = useState<string>(() => {
     try { return localStorage.getItem(LS_ROOT) || ""; } catch { return ""; }
@@ -110,7 +116,11 @@ export function ExpertsTab({ pills, onSummon, onToast }: Props) {
   }, [catalog, expertById]);
 
   const byType = useMemo(
-    () => (catalog?.experts ?? []).filter((e) => e.type === listTab),
+    () => (catalog?.experts ?? []).filter((e) => {
+      // "expert" tab shows single agents; "team" tab shows teams.
+      const targetType = listTab === "expert" ? "agent" : "team";
+      return e.type === targetType;
+    }),
     [catalog, listTab],
   );
 
@@ -171,6 +181,76 @@ export function ExpertsTab({ pills, onSummon, onToast }: Props) {
     catch (e) { onToast?.(`删除失败：${String(e).replace(/^Error:\s*/, "")}`); }
   }, [onToast, reloadLocals]);
 
+  /** Read the full prompt, set pending expert, navigate home. */
+  const handleSummonFromModal = useCallback(async (expert: ExpertItem, promptOverride?: string) => {
+    setModalExpert(null);
+
+    // Read the full agent prompt from disk.
+    let fullPrompt = "";
+    if (expert.plugin && expert.agentName && root) {
+      try {
+        const raw = await expertsReadAgentPrompt(root, expert.plugin, expert.agentName);
+        // Strip frontmatter to get just the body.
+        const trimmed = raw.trimStart();
+        if (trimmed.startsWith("---")) {
+          const afterOpen = trimmed.indexOf("\n");
+          if (afterOpen !== -1) {
+            const rest = trimmed.slice(afterOpen + 1);
+            const closeIdx = rest.search(/\n---\s*(\n|$)/);
+            fullPrompt = closeIdx !== -1 ? rest.slice(closeIdx).replace(/^\n---\s*/, "").trim() : raw.trim();
+          } else {
+            fullPrompt = raw.trim();
+          }
+        } else {
+          fullPrompt = raw.trim();
+        }
+      } catch { /* fallback: empty prompt */ }
+    }
+
+    // For team experts: link member agents into ~/.grok/agents/ so grok's
+    // Task tool can spawn them by bare name during multi-agent orchestration.
+    if (expert.type === "team" && expert.plugin && root) {
+      expertsLinkAgents(root, expert.plugin).catch(() => { /* best-effort */ });
+    }
+
+    const name = expert.title || expert.name;
+    setPendingExpert({
+      name,
+      prompt: fullPrompt,
+      description: expert.desc || name,
+      quickPrompt: promptOverride || expert.init || undefined,
+      expertId: expert.id,
+      source: "marketplace",
+      avatarLocal: expert.avatarLocal,
+    });
+
+    // Navigate to home page.
+    onGoHome?.();
+  }, [root, setPendingExpert, onGoHome]);
+
+  /** For local agents: set pending + go home. */
+  const handleUseLocal = useCallback((a: AgentEntry) => {
+    // Extract body from raw.
+    let body = a.raw || a.description || "";
+    const trimmed = body.trimStart();
+    if (trimmed.startsWith("---")) {
+      const afterOpen = trimmed.indexOf("\n");
+      if (afterOpen !== -1) {
+        const rest = trimmed.slice(afterOpen + 1);
+        const closeIdx = rest.search(/\n---\s*(\n|$)/);
+        if (closeIdx !== -1) body = rest.slice(closeIdx).replace(/^\n---\s*/, "").trim();
+      }
+    }
+    setPendingExpert({
+      name: a.name,
+      prompt: body,
+      description: a.description || a.name,
+      expertId: a.name,
+      source: "local",
+    });
+    onGoHome?.();
+  }, [setPendingExpert, onGoHome]);
+
   // ---- no data dir yet ----
   if (needPick && !catalog) {
     return (
@@ -220,10 +300,7 @@ export function ExpertsTab({ pills, onSummon, onToast }: Props) {
                   <p className="ec-card-desc">{a.description || "（无描述）"}</p>
                   <div className="ec-my-card-foot">
                     <button type="button" className="ec-card-tag ec-card-tag--btn"
-                      onClick={() => onSummon({
-                        id: a.name, cat: "", name: a.name, title: a.name,
-                        desc: a.description || "", tags: [], type: "agent",
-                      })}>使用</button>
+                      onClick={() => handleUseLocal(a)}>使用</button>
                     <button type="button" className="ec-my-del" title="删除"
                       onClick={() => handleDeleteLocal(a)}><DeleteIcon size="sm" /></button>
                   </div>
@@ -278,7 +355,7 @@ export function ExpertsTab({ pills, onSummon, onToast }: Props) {
 
         {catalog && (
           <>
-            <FeaturedScenes scenes={scenes} expertById={expertById} onSummon={onSummon} />
+            <FeaturedScenes scenes={scenes} expertById={expertById} onSummon={(e) => setModalExpert(e)} />
 
             <div className="ec-list-head">
               <SegmentTabs<ListTab>
@@ -310,13 +387,22 @@ export function ExpertsTab({ pills, onSummon, onToast }: Props) {
             ) : (
               <div className="ec-grid">
                 {visible.map((e) => (
-                  <ExpertCard key={e.id} expert={e} onSummon={onSummon} />
+                  <ExpertCard key={e.id} expert={e} onSummon={() => setModalExpert(e)} />
                 ))}
               </div>
             )}
           </>
         )}
       </div>
+
+      {/* Detail modal */}
+      {modalExpert && (
+        <ExpertDetailModal
+          expert={modalExpert}
+          onClose={() => setModalExpert(null)}
+          onSummon={handleSummonFromModal}
+        />
+      )}
     </div>
   );
 }

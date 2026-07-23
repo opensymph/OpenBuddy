@@ -27,6 +27,9 @@ type ToolSidePanelProps = {
  * - tool: full tool-call detail (command / diff / output)
  * - artifacts: session file list from tool calls
  * - preview: lightweight text preview of a local file
+ *
+ * 产物标签栏 (ArtifactTabsBar 风格): preview 模式下，面板顶部显示最近
+ * 预览过的文件标签条，点击即可快速切换，无需回到列表。
  */
 export function ToolSidePanel({
   open,
@@ -42,6 +45,33 @@ export function ToolSidePanel({
   onOpenArtifacts,
   findToolCall,
 }: ToolSidePanelProps) {
+  // ---- 产物标签栏: track recently-previewed artifacts for quick switching ----
+  const [previewHistory, setPreviewHistory] = useState<SessionArtifact[]>([]);
+
+  // Accumulate preview history: when a new previewPath arrives, find its
+  // artifact and push to history (dedup by path, most-recent last).
+  useEffect(() => {
+    if (mode !== "preview" || !previewPath) return;
+    setPreviewHistory((prev) => {
+      const hit = artifacts.find((a) => a.path === previewPath);
+      const entry: SessionArtifact = hit ?? {
+        id: previewPath,
+        path: previewPath,
+        kind: toolCall?.kind ?? "file",
+        title: toolCall?.title ?? basename(previewPath),
+        toolCallId: toolCall?.toolCallId ?? "",
+        status: toolCall?.status ?? "completed",
+      };
+      const without = prev.filter((a) => a.path !== previewPath);
+      return [...without, entry].slice(-8); // keep at most 8 tabs
+    });
+  }, [mode, previewPath, artifacts, toolCall]);
+
+  // Clear history when panel closes.
+  useEffect(() => {
+    if (!open) setPreviewHistory([]);
+  }, [open]);
+
   if (!open) return null;
 
   const title =
@@ -88,6 +118,28 @@ export function ToolSidePanel({
           ×
         </button>
       </header>
+
+      {/* 产物标签栏: quick-switch tabs for recently previewed files */}
+      {mode === "preview" && previewHistory.length > 1 && (
+        <div className="artifact-tabs-bar" role="tablist">
+          {previewHistory.map((a) => (
+            <button
+              key={a.path}
+              type="button"
+              role="tab"
+              aria-selected={a.path === previewPath}
+              className={
+                "artifact-tabs-bar__tab" +
+                (a.path === previewPath ? " artifact-tabs-bar__tab--active" : "")
+              }
+              onClick={() => onSelectArtifact(a)}
+              title={a.path}
+            >
+              {basename(a.path)}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="tool-side-panel__body">
         {mode === "tool" && toolCall && (

@@ -399,6 +399,44 @@ pub fn grok_set_session_pinned(session_id: String, pinned: bool) -> Result<bool,
     crate::meta::set_pinned(&session_id, pinned)
 }
 
+/// Fetch the session's context-window snapshot (`x.ai/session/info`) for the
+/// composer's context-usage pill/popover. Fails when the session isn't live
+/// in the agent (e.g. an old session never loaded this launch) — the
+/// frontend treats that as "no data" and hides the pill.
+#[tauri::command]
+pub async fn grok_session_info(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    let tx = state
+        .tx
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("agent not initialized")?;
+    grok::session_info(&tx, &session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Fetch the session's cumulative token usage (`x.ai/session/usage`) — used
+/// by the context-usage popover for the average cache hit rate.
+#[tauri::command]
+pub async fn grok_session_usage(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    let tx = state
+        .tx
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("agent not initialized")?;
+    grok::session_usage(&tx, &session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Archive or unarchive a session. grok's `Summary` has no `archived` field,
 /// so this is OpenBuddy-only state stored in `~/.grok/openbuddy-state.json`.
 /// Archived sessions are filtered out of `list_sessions`. Returns the new
@@ -406,4 +444,28 @@ pub fn grok_set_session_pinned(session_id: String, pinned: bool) -> Result<bool,
 #[tauri::command]
 pub fn grok_set_session_archived(session_id: String, archived: bool) -> Result<bool, String> {
     crate::meta::set_archived(&session_id, archived)
+}
+
+/// Bind an expert to a session (OpenBuddy-only state). Returns `true` on success.
+#[tauri::command]
+pub fn grok_set_session_expert(
+    session_id: String,
+    expert_id: String,
+    expert_name: String,
+    source: String,
+) -> Result<bool, String> {
+    crate::meta::set_expert(
+        &session_id,
+        crate::meta::ExpertBinding {
+            expert_id,
+            expert_name,
+            source,
+        },
+    )
+}
+
+/// Remove the expert binding from a session. Returns `true` if a binding was removed.
+#[tauri::command]
+pub fn grok_clear_session_expert(session_id: String) -> Result<bool, String> {
+    crate::meta::clear_expert(&session_id)
 }

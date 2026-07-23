@@ -367,3 +367,36 @@ pub async fn delete_session(
     let _: acp::ExtResponse = crate::ext::call_ext_value(tx, "x.ai/session/delete", params).await?;
     Ok(())
 }
+
+/// Fetch a session's context-window snapshot via grok's `x.ai/session/info`
+/// extension method (session/handlers/session.rs). The response is the
+/// camelCase `SessionInfoResponse` — its `context` field carries
+/// used/total/usagePct plus the token breakdown (system prompt, tool
+/// definitions, messages, skills/MCP categories) shown by the composer pill.
+/// Returned as raw JSON: the wire shape is owned by grok, so we pass it
+/// through rather than mirroring the struct in Rust.
+pub async fn session_info(tx: &AcpAgentTx, session_id: &str) -> Result<serde_json::Value> {
+    let params = crate::ext::raw_params(&serde_json::json!({
+        "sessionId": session_id,
+    }));
+    let resp: serde_json::Value = crate::ext::call_ext(tx, "x.ai/session/info", params).await?;
+    // Unlike most x.ai/* methods, session/info wraps its payload in
+    // `ExtMethodResult { result, error? }` (session/result.rs) — and reports
+    // "session not live" as success({}) rather than an error. Unwrap the
+    // envelope so the frontend always sees the bare SessionInfoResponse.
+    if let Some(result) = resp.get("result") {
+        return Ok(result.clone());
+    }
+    Ok(resp)
+}
+
+/// Fetch a session's cumulative token usage via grok's `x.ai/session/usage`
+/// extension method (extensions/usage.rs). The response's `usage` field is a
+/// `PromptUsage` whose totals include `inputTokens` and `cachedReadTokens` —
+/// the frontend derives the average cache hit rate from those two.
+pub async fn session_usage(tx: &AcpAgentTx, session_id: &str) -> Result<serde_json::Value> {
+    let params = crate::ext::raw_params(&serde_json::json!({
+        "sessionId": session_id,
+    }));
+    crate::ext::call_ext(tx, "x.ai/session/usage", params).await
+}

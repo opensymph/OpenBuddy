@@ -18,8 +18,10 @@ interface PlaceholderPageProps {
   onPlaceholder?: (label: string) => void;
   /** Navigate to another sidebar view (e.g. 自动化 → 管理连接器 → 专家·技能·连接器). */
   onNavigate?: (label: string) => void;
+  /** Navigate to the home page (used after expert summon). */
+  onGoHome?: () => void;
   /** Start a new chat guided by an expert/assistant definition. */
-  onStartWithExpert?: (agent: AgentEntry) => void;
+  onStartWithExpert?: (agent: AgentEntry, meta?: { expertId?: string; source?: string }) => void;
   /** Surface transient feedback (errors, success toasts). */
   onToast?: (message: string) => void;
   /** Current cwd (for memory workspace scope, projects panel). */
@@ -53,7 +55,7 @@ export function PlaceholderPage({
   label,
   onPlaceholder,
   onNavigate,
-  onStartWithExpert,
+  onGoHome,
   onToast,
   cwd,
   onSelectWorkspace,
@@ -97,7 +99,7 @@ export function PlaceholderPage({
   }
 
   if (label === "专家·技能·连接器") {
-    return <ExpertsPanel onUseExpert={onStartWithExpert} onToast={onToast} />;
+    return <ExpertsPanel onGoHome={onGoHome} onToast={onToast} />;
   }
 
   if (label === "自动化") {

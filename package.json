@@ -1,7 +1,7 @@
 {
   "name": "openbuddy",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "OpenBuddy — a WorkBuddy-style desktop shell for the grok agent, built on Tauri.",
   "scripts": {

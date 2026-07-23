@@ -26,9 +26,11 @@ import type {
   RewindPoint,
   RunningTask,
   SearchHit,
+  SessionInfoResponse,
   SessionSummary,
   SessionSummaryEvent,
   SessionUpdate,
+  SessionUsage,
   SkillInfo,
   SlashCommand,
 } from "./types";
@@ -181,6 +183,28 @@ export async function grokSetSessionArchived(
   archived: boolean,
 ): Promise<boolean> {
   return invoke<boolean>("grok_set_session_archived", { sessionId, archived });
+}
+
+// ---------- context usage (x.ai/session/info + x.ai/session/usage) ----------
+
+/**
+ * Fetch the session's context-window snapshot (`x.ai/session/info`) for the
+ * composer's context-usage pill/popover. Rejects when the session isn't live
+ * in the agent (e.g. an old session never loaded this launch) — callers
+ * should treat that as "no data" and hide the pill.
+ */
+export async function grokSessionInfo(sessionId: string): Promise<SessionInfoResponse> {
+  return invoke<SessionInfoResponse>("grok_session_info", { sessionId });
+}
+
+/**
+ * Fetch the session's cumulative token usage (`x.ai/session/usage`) — the
+ * response wraps `PromptUsage` totals; we return the inner `usage` object.
+ * Used by the context-usage popover for the average cache hit rate.
+ */
+export async function grokSessionUsage(sessionId: string): Promise<SessionUsage> {
+  const resp = await invoke<{ usage: SessionUsage }>("grok_session_usage", { sessionId });
+  return resp.usage;
 }
 
 export async function grokResolvePermission(
@@ -364,6 +388,35 @@ export async function expertsThumbnail(path: string): Promise<string> {
 /** Full-size local image as a `data:` URL (used for 精选场景 banners). */
 export async function expertsImageBytes(path: string): Promise<string> {
   return invoke<string>("experts_image_bytes", { path });
+}
+
+/** Read the full agent prompt markdown from an expert's package directory. */
+export async function expertsReadAgentPrompt(
+  root: string,
+  plugin: string,
+  agentName: string,
+): Promise<string> {
+  return invoke<string>("experts_read_agent_prompt", { root, plugin, agentName });
+}
+
+/** Link a team expert's agents/*.md into ~/.grok/agents/ for grok sub-agent discovery. */
+export async function expertsLinkAgents(root: string, plugin: string): Promise<number> {
+  return invoke<number>("experts_link_agents", { root, plugin });
+}
+
+/** Bind an expert to a session (OpenBuddy-only state). */
+export async function grokSetSessionExpert(
+  sessionId: string,
+  expertId: string,
+  expertName: string,
+  source: string,
+): Promise<boolean> {
+  return invoke<boolean>("grok_set_session_expert", { sessionId, expertId, expertName, source });
+}
+
+/** Remove the expert binding from a session. */
+export async function grokClearSessionExpert(sessionId: string): Promise<boolean> {
+  return invoke<boolean>("grok_clear_session_expert", { sessionId });
 }
 
 // ---------- experts / assistants (~/.grok/agents/*.md) ----------

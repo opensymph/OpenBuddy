@@ -1,12 +1,15 @@
 /**
- * 回溯/分叉工具栏 - 显示在 ChatView 顶部，让用户回到任意历史 prompt
+ * 回溯/分叉工具栏 — 显示在 ChatView 底部（composer 正上方）。
  *
  * 两个能力：
  *  - Rewind（回溯）：调 `x.ai/rewind/{points,execute}`，回到指定 prompt 索引。
- *    支持 mode=conversation（仅回退对话）/ all（含文件改动）/ files。
+ *    支持 mode: conversation（仅回退对话）/ files（仅文件）/ all（全量，含对话+文件+记忆）。
  *  - Fork（分叉）：调 `x.ai/session/fork`，复制会话到新 id 探索不同方向。
  *
- * 这两个能力在 WorkBuddy 对应"历史回溯"和"分支探索"。
+ * 增强点（对齐 WorkBuddy）：
+ *  - 时间线视图：每个回溯点显示时间、prompt 预览、assistant 回复预览、工具调用徽章。
+ *  - 文件/记忆变更徽章：标记哪些步骤产生了文件改动或记忆写入。
+ *  - 三种模式按钮：仅对话 / 仅文件 / 全量。
  */
 import { useEffect, useState } from "react";
 import {
@@ -20,6 +23,24 @@ import {
   ChevronDownIcon,
   GitBranchIcon,
 } from "@/foundation/components/Icon/icons";
+
+/** Rewind mode options matching grok's x.ai/rewind/execute mode param.
+ *  NOTE: grok's RewindMode enum only has All/ConversationOnly/FilesOnly —
+ *  there is no "memory"-only mode (all already includes memory). Don't add
+ *  "memory" here or grok's serde will reject it at runtime. */
+type RewindMode = "conversation" | "files" | "all";
+
+const MODE_LABELS: Record<RewindMode, string> = {
+  conversation: "仅对话",
+  files: "仅文件",
+  all: "全量",
+};
+
+const MODE_TITLES: Record<RewindMode, string> = {
+  conversation: "回退对话历史，不影响文件",
+  files: "回退文件改动，不影响对话",
+  all: "回退所有（对话 + 文件 + 记忆）",
+};
 
 interface RewindBarProps {
   sessionId: string;
@@ -40,6 +61,8 @@ export function RewindBar({
   const [points, setPoints] = useState<RewindPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Currently selected mode for the next rewind action. */
+  const [selectedMode, setSelectedMode] = useState<RewindMode>("all");
 
   const loadPoints = async () => {
     setLoading(true);
@@ -57,11 +80,12 @@ export function RewindBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sessionId]);
 
-  const handleRewind = async (idx: number, mode: "all" | "conversation") => {
+  const handleRewind = async (idx: number) => {
     setBusy(true);
     try {
-      await rewindExecute(sessionId, idx, mode, true);
-      onToast?.(mode === "all" ? "已回溯（含文件改动）" : "已回退对话");
+      await rewindExecute(sessionId, idx, selectedMode, true);
+      const label = MODE_LABELS[selectedMode];
+      onToast?.(`已回溯（${label}）`);
       onRewound?.();
       setOpen(false);
     } catch (e) {
@@ -85,8 +109,6 @@ export function RewindBar({
     }
   };
 
-  // Only show the toggle if there's likely history (heuristic: always show,
-  // the dropdown will say "无回溯点" if empty).
   return (
     <div className="rewind-bar">
       <button
@@ -106,52 +128,101 @@ export function RewindBar({
       >
         <GitBranchIcon size="sm" /> 分叉
       </button>
+
       {open && (
-        <div className="rewind-bar__dropdown">
+        <div className="rewind-bar__dropdown rewind-bar__dropdown--timeline">
+          {/* Header with refresh */}
           <div className="rewind-bar__header">
-            可回溯点
+            <span>回溯时间线</span>
             <button
               className="rewind-bar__refresh"
               onClick={loadPoints}
               disabled={loading}
             >
-              刷新
+              {loading ? "加载中…" : "刷新"}
             </button>
           </div>
+
+          {/* Mode selector */}
+          <div className="rewind-bar__modes">
+            {(Object.keys(MODE_LABELS) as RewindMode[]).map((mode) => (
+              <button
+                key={mode}
+                className={
+                  "rewind-bar__mode-btn" +
+                  (selectedMode === mode ? " rewind-bar__mode-btn--active" : "")
+                }
+                onClick={() => setSelectedMode(mode)}
+                title={MODE_TITLES[mode]}
+              >
+                {MODE_LABELS[mode]}
+              </button>
+            ))}
+          </div>
+
+          {/* Timeline list */}
           {loading && <div className="rewind-bar__empty">加载中…</div>}
           {!loading && points.length === 0 && (
             <div className="rewind-bar__empty">无回溯点（会话刚创建）</div>
           )}
-          <ul className="rewind-bar__list">
-            {points.map((p, i) => (
-              <li key={i} className="rewind-bar__point">
-                <div className="rewind-bar__point-info">
-                  <div className="rewind-bar__point-title">
-                    #{p.promptIndex}
-                    {p.promptPreview
-                      ? `: ${p.promptPreview.slice(0, 50)}${
-                          p.promptPreview.length > 50 ? "…" : ""
-                        }`
-                      : ""}
+          <ul className="rewind-bar__timeline">
+            {points.map((p) => (
+              <li key={p.promptIndex} className="rewind-bar__timeline-item">
+                {/* Timeline dot + connector line */}
+                <div className="rewind-bar__timeline-rail">
+                  <span className="rewind-bar__timeline-dot" />
+                </div>
+
+                {/* Content card */}
+                <div className="rewind-bar__timeline-card">
+                  <div className="rewind-bar__timeline-time">
+                    {p.timestamp
+                      ? new Date(p.timestamp).toLocaleString()
+                      : `#${p.promptIndex}`}
                   </div>
-                  {p.timestamp && (
-                    <div className="rewind-bar__point-time">
-                      {new Date(p.timestamp).toLocaleString()}
+                  {p.promptPreview && (
+                    <div className="rewind-bar__timeline-prompt">
+                      {p.promptPreview.length > 80
+                        ? p.promptPreview.slice(0, 80) + "…"
+                        : p.promptPreview}
                     </div>
                   )}
-                </div>
-                <div className="rewind-bar__point-actions">
+                  {p.messagePreview && (
+                    <div className="rewind-bar__timeline-response">
+                      💬{" "}
+                      {p.messagePreview.length > 60
+                        ? p.messagePreview.slice(0, 60) + "…"
+                        : p.messagePreview}
+                    </div>
+                  )}
+
+                  {/* Badges: file changes / memory changes / tool names */}
+                  <div className="rewind-bar__timeline-badges">
+                    {p.hasFileChanges && (
+                      <span className="rewind-bar__badge rewind-bar__badge--file">
+                        📄 文件
+                      </span>
+                    )}
+                    {p.hasMemoryChanges && (
+                      <span className="rewind-bar__badge rewind-bar__badge--memory">
+                        🧠 记忆
+                      </span>
+                    )}
+                    {p.toolNames && p.toolNames.length > 0 && (
+                      <span className="rewind-bar__badge rewind-bar__badge--tool">
+                        🔧 {p.toolNames.slice(0, 3).join(", ")}
+                        {p.toolNames.length > 3 && ` +${p.toolNames.length - 3}`}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Rewind action button */}
                   <button
-                    onClick={() => handleRewind(p.promptIndex, "conversation")}
+                    className="rewind-bar__timeline-action"
+                    onClick={() => handleRewind(p.promptIndex)}
                     disabled={busy}
                   >
-                    仅对话
-                  </button>
-                  <button
-                    onClick={() => handleRewind(p.promptIndex, "all")}
-                    disabled={busy}
-                  >
-                    含文件
+                    回溯到此处（{MODE_LABELS[selectedMode]}）
                   </button>
                 </div>
               </li>
