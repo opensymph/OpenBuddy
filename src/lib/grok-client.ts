@@ -244,7 +244,8 @@ export type ProviderKind =
   | "grok"
   | "deepseek"
   | "qwen"
-  | "custom";
+  | "custom"
+  | "custom_anthropic";
 
 /** API wire protocol. Mirrors grok's ApiBackend enum (snake_case). */
 export type ApiBackend = "chat_completions" | "responses" | "messages";
@@ -252,32 +253,90 @@ export type ApiBackend = "chat_completions" | "responses" | "messages";
 /** HTTP auth header style. Mirrors grok's AuthScheme enum (snake_case). */
 export type AuthScheme = "bearer" | "x_api_key";
 
-export interface ProviderConfig {
+/**
+ * One connection/auth profile — written to `[model_providers.<id>]`. A single
+ * provider holds one api_key / base_url shared by every model that references
+ * it via `providerId`.
+ */
+export interface ModelProviderEntry {
+  /** Stable id derived from providerKind (e.g. "openai", "custom-2"). */
+  id: string;
   providerKind: ProviderKind;
-  modelId: string;
   label?: string;
   /** Masked "••••" when read back; the real secret when saving. */
   apiKey?: string;
-  /** Override the preset base_url. Undefined = inherit from disk or preset. */
   baseUrl?: string;
-  /** Override the preset api_backend. */
   apiBackend?: ApiBackend;
-  /** Override the preset auth_scheme. */
   authScheme?: AuthScheme;
+  /** Max context window in tokens, shared by all referencing models. */
+  contextWindow?: number;
+}
+
+/**
+ * One model catalog entry — written to `[model.<modelId>]` with a
+ * `model_provider = "<providerId>"` reference. Carries only model-specific
+ * fields; connection config lives on the provider.
+ */
+export interface ModelEntry {
+  /** The `[model.<id>]` key AND the model slug sent in requests. */
+  modelId: string;
+  /** References a ModelProviderEntry.id. */
+  providerId: string;
   /** Human-readable display name (grok's `name` field). */
   name?: string;
+  /** Per-model context-window override (wins over the provider's value). */
+  contextWindow?: number;
 }
 
-export async function providersList(): Promise<ProviderConfig[]> {
-  return invoke<ProviderConfig[]>("providers_list");
+/** Result of providers_list: every provider + every model, joined by providerId. */
+export interface ProviderListModel {
+  providers: ModelProviderEntry[];
+  models: ModelEntry[];
 }
 
-export async function providersSave(providers: ProviderConfig[]): Promise<void> {
-  await invoke<void>("providers_save", { providers });
+/**
+ * Convenience: flatten the joined list back into per-model option rows for
+ * pickers that only need { id, label }. Each model is joined with its
+ * provider so consumers keep using a flat array.
+ */
+export interface ModelOptionRow {
+  id: string;
+  label: string;
+  providerKind: ProviderKind;
+  providerId: string;
 }
 
-export async function providersDelete(modelId: string): Promise<void> {
-  await invoke<void>("providers_delete", { modelId });
+/** Flatten a ProviderListModel into per-model rows (id + label + provider). */
+export function flattenModels(list: ProviderListModel): ModelOptionRow[] {
+  return list.models.map((m) => {
+    const provider = list.providers.find((p) => p.id === m.providerId);
+    return {
+      id: m.modelId,
+      label: m.name || m.modelId,
+      providerKind: (provider?.providerKind ?? "custom") as ProviderKind,
+      providerId: m.providerId,
+    };
+  });
+}
+
+export async function providersList(): Promise<ProviderListModel> {
+  return invoke<ProviderListModel>("providers_list");
+}
+
+export async function providersSaveProvider(provider: ModelProviderEntry): Promise<void> {
+  await invoke<void>("providers_save_provider", { provider });
+}
+
+export async function providersSaveModel(model: ModelEntry): Promise<void> {
+  await invoke<void>("providers_save_model", { model });
+}
+
+export async function providersDeleteProvider(id: string): Promise<void> {
+  await invoke<void>("providers_delete_provider", { id });
+}
+
+export async function providersDeleteModel(modelId: string): Promise<void> {
+  await invoke<void>("providers_delete_model", { modelId });
 }
 
 /** One model entry returned by a provider's GET /models endpoint. */
@@ -410,8 +469,9 @@ export async function grokSetSessionExpert(
   expertId: string,
   expertName: string,
   source: string,
+  avatarLocal?: string,
 ): Promise<boolean> {
-  return invoke<boolean>("grok_set_session_expert", { sessionId, expertId, expertName, source });
+  return invoke<boolean>("grok_set_session_expert", { sessionId, expertId, expertName, source, avatarLocal: avatarLocal ?? null });
 }
 
 /** Remove the expert binding from a session. */

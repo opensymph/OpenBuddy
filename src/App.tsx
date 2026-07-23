@@ -21,8 +21,8 @@ import { useSessionsStore } from "./stores/sessions-store";
 import { usePermissionStore } from "./stores/permission-store";
 import { useQuestionStore } from "./stores/question-store";
 import { usePendingExpertStore } from "./stores/pending-expert-store";
-import { useContextUsageStore } from "./stores/context-usage-store";
 import { TopbarTitle } from "./components/TopbarTitle";
+import { ThumbImg } from "./components/experts-panel/shared/ThumbImg";
 import {
   grokInit,
   grokNewSession,
@@ -36,6 +36,7 @@ import {
   grokSetSessionExpert,
   grokAuthStatus,
   providersList,
+  flattenModels,
   notificationAppend,
   subscribeGrokEvents,
   type InitResult,
@@ -122,10 +123,7 @@ function Shell() {
   const refreshModels = useCallback(async () => {
     try {
       const [list, auth] = await Promise.all([providersList(), grokAuthStatus()]);
-      const options = list.map((m) => ({
-        id: m.modelId,
-        label: m.name || m.modelId,
-      }));
+      const options = flattenModels(list);
       setModels(options);
 
       // Keep the current selection if it still exists; otherwise pick the first
@@ -186,7 +184,6 @@ function Shell() {
             // Update sidebar status so the task filter reflects the completion.
             sessionsStore.getState().upsert({ sessionId: p.sessionId, status: "completed" });
             // Refresh the composer context-usage pill after each turn.
-            void useContextUsageStore.getState().refresh(p.sessionId);
             void notificationAppend(
               "session_complete",
               `会话完成（${p.stopReason ?? "end_turn"}）`,
@@ -297,9 +294,9 @@ function Shell() {
         setWorkspaces(ws);
 
         // Load the model list (from config.toml [model.*]) for the picker.
-        // Each provider becomes one ModelOption; the id is the grok routing slug.
+        // Each model becomes one ModelOption; the id is the grok routing slug.
         const providers = await providersList();
-        const providerOptions = providers.map((p) => ({ id: p.modelId, label: p.name || p.modelId }));
+        const providerOptions = flattenModels(providers);
         setModels(providerOptions);
 
         // IMPORTANT: grok's initialize response reports `currentModelId` from
@@ -402,9 +399,9 @@ function Shell() {
         // MessageItem strips it from display on history replay.
         textForGrok = `${EXPERT_PERSONA_BEGIN}\n${pending.prompt}\n${EXPERT_PERSONA_END}\n\n${text}`;
         // Bind expert to session for persistence + UI badge.
-        grokSetSessionExpert(sessionId, pending.expertId, pending.name, pending.source)
+        grokSetSessionExpert(sessionId, pending.expertId, pending.name, pending.source, pending.avatarLocal)
           .catch(() => {});
-        sessionsStore.getState().upsert({ sessionId, expertId: pending.expertId, expertName: pending.name });
+        sessionsStore.getState().upsert({ sessionId, expertId: pending.expertId, expertName: pending.name, expertAvatar: pending.avatarLocal });
         usePendingExpertStore.getState().clear();
       }
 
@@ -478,20 +475,36 @@ function Shell() {
   // handleSendNew when the session is created.
   const handleModelChange = async (modelId: string) => {
     setCurrentModelId(modelId);
-    if (currentSessionId) {
-      try {
-        await grokSetModel(currentSessionId, modelId);
-      } catch (e) {
-        // grok rejects with MODEL_SWITCH_INCOMPATIBLE_AGENT when the session
-        // has turns and the new model needs a different harness — suggest a
-        // new session.
-        const msg = String(e);
-        showToast(
-          /incompatible|start_new_session/i.test(msg)
-            ? "该会话无法切换到此模型，请新建会话"
-            : `模型切换失败：${msg}`
-        );
+    if (!currentSessionId) return;
+    // grok only knows about sessions it has *loaded* into memory. A session
+    // picked from the sidebar (grok_list_sessions) isn't loaded until
+    // grokLoadSession runs, and after an agent restart even a freshly-used
+    // session can be gone. set_session_model then fails with
+    // "unknown session id". Recover transparently: load the session into the
+    // agent (replaying its history) and retry the switch once.
+    const trySet = () => grokSetModel(currentSessionId, modelId);
+    try {
+      await trySet();
+    } catch (e) {
+      const msg = String(e);
+      // Incompatible harness is a hard error — loading won't help.
+      if (/incompatible|start_new_session/i.test(msg)) {
+        showToast("该会话无法切换到此模型，请新建会话");
+        return;
       }
+      // Session genuinely unknown to grok — load it (with its own cwd) then
+      // retry. currentEntry carries the cwd the session belongs to.
+      if (/unknown session/i.test(msg)) {
+        try {
+          await grokLoadSession(currentSessionId, currentEntry?.cwd ?? cwdRef.current);
+          await trySet();
+          return;
+        } catch (e2) {
+          showToast(`模型切换失败：${String(e2).replace(/^Error:\s*/, "")}`);
+          return;
+        }
+      }
+      showToast(`模型切换失败：${msg.replace(/^Error:\s*/, "")}`);
     }
   };
 
@@ -543,7 +556,6 @@ function Shell() {
       // Viewing a 空间 child must NOT re-aim the new-session target directory.
       await grokLoadSession(sessionId, sessionCwd ?? "");
       // Populate the context-usage pill for the freshly loaded session.
-      void useContextUsageStore.getState().refresh(sessionId);
     } catch (e) {
       sessionStore.getState().setError(String(e));
     } finally {
@@ -777,7 +789,8 @@ function Shell() {
                 <TopbarTitle title={currentTitle} onRename={handleRenameTitle} />
                 {currentEntry?.expertName && (
                   <span className="expert-badge" data-tip={`专家：${currentEntry.expertName}`}>
-                    🤖 {currentEntry.expertName}
+                    <ThumbImg name={currentEntry.expertName} local={currentEntry.expertAvatar} size={18} shape="circle" />
+                    {currentEntry.expertName}
                   </span>
                 )}
                 {currentSessionId && (

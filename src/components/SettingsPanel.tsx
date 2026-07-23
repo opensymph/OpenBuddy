@@ -25,13 +25,17 @@ import {
 } from "lucide-react";
 import {
   providersList,
-  providersSave,
-  providersDelete,
+  providersSaveProvider,
+  providersSaveModel,
+  providersDeleteProvider,
+  providersDeleteModel,
   providersFetchModels,
   internalReload,
   type ApiBackend,
   type AuthScheme,
-  type ProviderConfig,
+  type ModelProviderEntry,
+  type ModelEntry,
+  type ProviderListModel,
   type ProviderKind,
   type FetchedModel,
 } from "@/lib/grok-client";
@@ -162,6 +166,16 @@ const PRESETS: Record<ProviderKind, Preset> = {
     placeholderKey: "your-api-key",
     helpUrl: "（请填写您的提供商文档地址）",
   },
+  custom_anthropic: {
+    label: "自定义 (Anthropic 兼容)",
+    // No baseUrl preset → user must supply it. But protocol/auth are locked to
+    // the Anthropic wire shape (messages backend + x-api-key header).
+    apiBackend: "messages",
+    authScheme: "x_api_key",
+    models: [],
+    placeholderKey: "sk-ant-...",
+    helpUrl: "（请填写您的提供商文档地址）",
+  },
 };
 
 export function SettingsPanel({
@@ -288,21 +302,47 @@ function PlaceholderSection({ label }: { label: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// 模型 section: list configured providers + open the add/edit editor.
+// 模型 section: provider-grouped view (one provider → many models).
+//
+// grok's native config shape is [model_providers.<id>] (one key/url/context_window)
+// + [model.<id>] with a `model_provider = "<id>"` reference. The UI mirrors
+// that: a left list of providers, a right detail showing that provider's
+// models + a connection editor. Legacy per-model entries (old shape) are
+// grouped for display but only rewritten to the new shape on save.
 // ---------------------------------------------------------------------------
 
+/** Inline "拉取模型" panel target (null = closed). */
+type ImportingState = { providerId: string; apiKey: string } | null;
+
 function ModelsSettingsPanel({ onModelsChanged }: { onModelsChanged?: () => void }) {
-  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [data, setData] = useState<ProviderListModel>({ providers: [], models: [] });
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [editing, setEditing] = useState<{ original?: ProviderConfig; draft: EditorDraft } | null>(
-    null
-  );
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  /** Editing target: a provider connection, or the "add provider" form. */
+  const [editingProvider, setEditingProvider] = useState<{
+    original?: ModelProviderEntry;
+    draft: ProviderDraft;
+  } | null>(null);
+  /** Editing target: a single model (add or edit). */
+  const [editingModel, setEditingModel] = useState<{
+    providerId: string;
+    original?: ModelEntry;
+    name: string;
+    contextWindow: string;
+  } | null>(null);
+  /** Inline "拉取模型" panel target (null = closed). */
+  const [importing, setImporting] = useState<ImportingState>(null);
 
   const reload = async () => {
     try {
       const list = await providersList();
-      setProviders(list);
+      setData(list);
+      // Keep a valid selection, or auto-pick the first provider.
+      setSelectedProviderId((prev) => {
+        if (prev && list.providers.some((p) => p.id === prev)) return prev;
+        return list.providers[0]?.id ?? null;
+      });
     } catch (e) {
       setMsg({ kind: "err", text: `读取配置失败：${String(e)}` });
     } finally {
@@ -315,44 +355,50 @@ function ModelsSettingsPanel({ onModelsChanged }: { onModelsChanged?: () => void
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSave = async (
-    drafts: ProviderConfig[],
-    original?: ProviderConfig,
-  ) => {
+  const modelsOf = (providerId: string) =>
+    data.models.filter((m) => m.providerId === providerId);
+
+  const refreshCatalog = () => internalReload("models").catch(() => {});
+
+  const handleSaveProvider = async (draft: ProviderDraft, original?: ModelProviderEntry) => {
     setMsg(null);
     try {
-      // If editing an existing entry, delete the old model_id unless it's
-      // still present in the new drafts (covers both single-edit rename and
-      // batch-save-from-an-existing-entry — the latter previously leaked an
-      // orphan because of a drafts.length === 1 guard).
-      if (original && !drafts.some((d) => d.modelId === original.modelId)) {
-        await providersDelete(original.modelId);
-      }
-      await providersSave(drafts);
-      // Hot-reload grok's model catalog so the new provider is usable
-      // immediately (no restart needed). The grok://models-update event
-      // also triggers a refresh in App.tsx as a safety net.
-      await internalReload("models").catch(() => {});
-      onModelsChanged?.();
-      setEditing(null);
-      await reload();
-      const n = drafts.length;
-      setMsg({
-        kind: "ok",
-        text: n > 1 ? `已保存 ${n} 个模型，列表已刷新。` : "已保存，模型列表已刷新。",
+      // id: stable, derived from providerKind. Keep an existing provider's id
+      // unless the user changed the kind (then it's effectively a new entry).
+      const id = original?.id ?? draft.providerKind;
+      await providersSaveProvider({
+        id,
+        providerKind: draft.providerKind,
+        apiKey: draft.apiKey.trim() || undefined,
+        baseUrl: draft.baseUrl.trim() || undefined,
+        apiBackend: draft.apiBackend,
+        authScheme: draft.authScheme,
+        contextWindow: draft.contextWindow ? Number(draft.contextWindow) : undefined,
       });
+      await refreshCatalog();
+      onModelsChanged?.();
+      setEditingProvider(null);
+      setSelectedProviderId(id);
+      await reload();
+      setMsg({ kind: "ok", text: "厂商配置已保存。" });
     } catch (e) {
       setMsg({ kind: "err", text: `保存失败：${String(e)}` });
     }
   };
 
-  const handleDelete = async (p: ProviderConfig) => {
-    if (!confirm(`删除模型「${p.name || p.modelId}」的配置？`)) return;
+  const handleDeleteProvider = async (p: ModelProviderEntry) => {
+    const count = modelsOf(p.id).length;
+    const confirmText =
+      count > 0
+        ? `删除厂商「${p.label || p.providerKind}」及其 ${count} 个模型？`
+        : `删除厂商「${p.label || p.providerKind}」？`;
+    if (!confirm(confirmText)) return;
     setMsg(null);
     try {
-      await providersDelete(p.modelId);
-      await internalReload("models").catch(() => {});
+      await providersDeleteProvider(p.id);
+      await refreshCatalog();
       onModelsChanged?.();
+      if (selectedProviderId === p.id) setSelectedProviderId(null);
       await reload();
       setMsg({ kind: "ok", text: "已删除，模型列表已刷新。" });
     } catch (e) {
@@ -360,17 +406,73 @@ function ModelsSettingsPanel({ onModelsChanged }: { onModelsChanged?: () => void
     }
   };
 
-  const newDraft: EditorDraft = useMemo(
+  const handleSaveModel = async (
+    providerId: string,
+    name: string,
+    contextWindow: string,
+    original?: ModelEntry,
+  ) => {
+    setMsg(null);
+    try {
+      await providersSaveModel({
+        modelId: original!.modelId,
+        providerId,
+        name: name.trim() || undefined,
+        contextWindow: contextWindow ? Number(contextWindow) : undefined,
+      });
+      await refreshCatalog();
+      onModelsChanged?.();
+      setEditingModel(null);
+      await reload();
+      setMsg({ kind: "ok", text: "模型已保存。" });
+    } catch (e) {
+      setMsg({ kind: "err", text: `保存失败：${String(e)}` });
+    }
+  };
+
+  const handleDeleteModel = async (m: ModelEntry) => {
+    if (!confirm(`删除模型「${m.name || m.modelId}」？`)) return;
+    setMsg(null);
+    try {
+      await providersDeleteModel(m.modelId);
+      await refreshCatalog();
+      onModelsChanged?.();
+      await reload();
+      setMsg({ kind: "ok", text: "已删除。" });
+    } catch (e) {
+      setMsg({ kind: "err", text: `删除失败：${String(e)}` });
+    }
+  };
+
+  // Batch import: save many fetched model ids under one provider at once.
+  // Each becomes its own [model.<id>] referencing the provider, so per-model
+  // display names default to the distinct model id (no more shared-name bug).
+  const handleBatchImport = async (providerId: string, ids: string[]) => {
+    setMsg(null);
+    try {
+      for (const id of ids) {
+        await providersSaveModel({ modelId: id, providerId });
+      }
+      await refreshCatalog();
+      onModelsChanged?.();
+      await reload();
+      setMsg({ kind: "ok", text: `已导入 ${ids.length} 个模型。` });
+    } catch (e) {
+      setMsg({ kind: "err", text: `导入失败：${String(e)}` });
+    }
+  };
+
+  const selectedProvider = data.providers.find((p) => p.id === selectedProviderId) ?? null;
+  const newProviderDraft: ProviderDraft = useMemo(
     () => ({
       providerKind: "custom",
-      modelId: "",
       apiKey: "",
       baseUrl: "",
       apiBackend: "chat_completions",
       authScheme: "bearer",
-      name: "",
+      contextWindow: "",
     }),
-    []
+    [],
   );
 
   return (
@@ -378,115 +480,253 @@ function ModelsSettingsPanel({ onModelsChanged }: { onModelsChanged?: () => void
       <h2 className="models-settings-panel__title">模型</h2>
 
       <section className="models-settings-panel__section">
-        <h3 className="models-settings-panel__section-title">自定义模型</h3>
-        <div className="models-settings-panel__card">
-          <div className="models-settings-panel__card-row">
-            <div className="models-settings-panel__card-left">
-              <div className="models-settings-panel__card-label">本地配置文件</div>
-              <div className="models-settings-panel__card-desc">
-                管理写入到{" "}
-                <code className="models-settings-panel__card-link">~/.grok/config.toml</code>{" "}
-                的本地自定义模型配置。
-              </div>
-            </div>
-            <div className="models-settings-panel__card-right">
-              <button
-                className="cb-button cb-button--secondary cb-button--small models-settings-panel__add-button"
-                onClick={() => setEditing({ draft: { ...newDraft } })}
-              >
-                <span className="cb-button__content">
-                  <Plus size={13} strokeWidth={2} style={{ marginRight: 4 }} />
-                  添加模型
-                </span>
-              </button>
-            </div>
-          </div>
+        <div className="models-settings-panel__section-head">
+          <h3 className="models-settings-panel__section-title">厂商与模型</h3>
+          <button
+            className="cb-button cb-button--secondary cb-button--small"
+            onClick={() => setEditingProvider({ draft: { ...newProviderDraft } })}
+          >
+            <span className="cb-button__content">
+              <Plus size={13} strokeWidth={2} style={{ marginRight: 4 }} />
+              添加厂商
+            </span>
+          </button>
         </div>
-      </section>
+        <div className="models-settings-panel__card-desc models-settings-panel__grouped-note">
+          一个厂商保存一份 API Key / Base URL / 上下文窗口，可挂载多个模型。配置写入{" "}
+          <code className="models-settings-panel__card-link">~/.grok/config.toml</code>。
+        </div>
 
-      <section className="models-settings-panel__section">
-        <h3 className="models-settings-panel__section-title">已保存模型</h3>
         {loading ? (
           <div className="models-settings-panel__empty">
             <div className="models-settings-panel__empty-title">加载中…</div>
           </div>
-        ) : providers.length === 0 ? (
+        ) : data.providers.length === 0 ? (
           <div className="models-settings-panel__empty">
-            <div className="models-settings-panel__empty-title">还没有配置自定义模型</div>
+            <div className="models-settings-panel__empty-title">还没有配置厂商</div>
             <div className="models-settings-panel__empty-desc">
-              添加后会自动写入本地 config.toml，并出现在 grok 的可用模型列表中。
+              点击「添加厂商」开始配置，一个厂商下可添加多个模型。
             </div>
           </div>
         ) : (
-          <ul className="models-settings-panel__list">
-            {providers.map((p) => (
-              <li key={p.modelId} className="models-settings-panel__item">
-                <div className="models-settings-panel__item-main">
-                  <div className="models-settings-panel__item-name">
-                    {p.name || p.modelId}
-                  </div>
-                  <div className="models-settings-panel__item-meta">
-                    <span className="models-settings-panel__item-tag">{p.providerKind}</span>
-                    <span className="models-settings-panel__item-modelid">{p.modelId}</span>
-                    {p.baseUrl && (
-                      <span className="models-settings-panel__item-url" title={p.baseUrl}>
-                        {p.baseUrl}
+          <div className="models-settings-panel__grouped">
+            {/* Left: provider list */}
+            <ul className="models-settings-panel__provider-list">
+              {data.providers.map((p) => {
+                const count = modelsOf(p.id).length;
+                const active = p.id === selectedProviderId;
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      className={
+                        "models-settings-panel__provider-item" +
+                        (active ? " models-settings-panel__provider-item--active" : "")
+                      }
+                      onClick={() => setSelectedProviderId(p.id)}
+                    >
+                      <span className="models-settings-panel__provider-name">
+                        {PRESETS[p.providerKind]?.label || p.providerKind}
                       </span>
-                    )}
+                      <span className="models-settings-panel__provider-meta">
+                        {count > 0 ? `${count} 个模型` : "无模型"}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {/* Right: selected provider detail */}
+            {selectedProvider && (
+              <div className="models-settings-panel__provider-detail">
+                <div className="models-settings-panel__provider-detail-head">
+                  <div className="models-settings-panel__provider-detail-title">
+                    {PRESETS[selectedProvider.providerKind]?.label || selectedProvider.providerKind}
+                  </div>
+                  <div className="models-settings-panel__provider-detail-actions">
+                    <button
+                      className="cb-button cb-button--ghost cb-button--small cb-button--icon-only"
+                      onClick={() =>
+                        setEditingProvider({
+                          original: selectedProvider,
+                          draft: {
+                            providerKind: selectedProvider.providerKind,
+                            apiKey: "",
+                            baseUrl: selectedProvider.baseUrl ?? "",
+                            apiBackend: selectedProvider.apiBackend ?? "chat_completions",
+                            authScheme: selectedProvider.authScheme ?? "bearer",
+                            contextWindow: selectedProvider.contextWindow
+                              ? String(selectedProvider.contextWindow)
+                              : "",
+                          },
+                        })
+                      }
+                      aria-label="编辑厂商"
+                      title="编辑厂商"
+                    >
+                      <Pencil size={14} strokeWidth={1.75} />
+                    </button>
+                    <button
+                      className="cb-button cb-button--ghost cb-button--small cb-button--icon-only"
+                      onClick={() => handleDeleteProvider(selectedProvider)}
+                      aria-label="删除厂商"
+                      title="删除厂商"
+                    >
+                      <Trash2 size={14} strokeWidth={1.75} />
+                    </button>
                   </div>
                 </div>
-                <div className="models-settings-panel__item-actions">
-                  <button
-                    className="cb-button cb-button--ghost cb-button--small cb-button--icon-only"
-                    onClick={() =>
-                      setEditing({
-                        original: p,
-                        // Convert ProviderConfig (optional fields) into an
-                        // EditorDraft (required strings). Strip the masked
-                        // "••••" apiKey so the editor shows empty — user
-                        // retypes to change, blank keeps the existing key.
-                        draft: {
-                          providerKind: p.providerKind,
-                          modelId: p.modelId,
-                          apiKey: "",
-                          baseUrl: p.baseUrl ?? "",
-                          apiBackend: p.apiBackend ?? "chat_completions",
-                          authScheme: p.authScheme ?? "bearer",
-                          name: p.name ?? "",
-                        },
-                      })
-                    }
-                    aria-label="编辑"
-                    title="编辑"
-                  >
-                    <Pencil size={14} strokeWidth={1.75} />
-                  </button>
-                  <button
-                    className="cb-button cb-button--ghost cb-button--small cb-button--icon-only"
-                    onClick={() => handleDelete(p)}
-                    aria-label="删除"
-                    title="删除"
-                  >
-                    <Trash2 size={14} strokeWidth={1.75} />
-                  </button>
+
+                <dl className="models-settings-panel__provider-fields">
+                  <div className="models-settings-panel__provider-field">
+                    <dt>Base URL</dt>
+                    <dd>{selectedProvider.baseUrl || "—"}</dd>
+                  </div>
+                  <div className="models-settings-panel__provider-field">
+                    <dt>协议</dt>
+                    <dd>{selectedProvider.apiBackend || "—"}</dd>
+                  </div>
+                  <div className="models-settings-panel__provider-field">
+                    <dt>认证</dt>
+                    <dd>{selectedProvider.authScheme || "—"}</dd>
+                  </div>
+                  <div className="models-settings-panel__provider-field">
+                    <dt>上下文窗口</dt>
+                    <dd>
+                      {selectedProvider.contextWindow
+                        ? `${selectedProvider.contextWindow.toLocaleString()} tokens`
+                        : "默认"}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="models-settings-panel__models-head">
+                  <span className="models-settings-panel__models-head-title">模型</span>
+                  <div className="models-settings-panel__models-head-actions">
+                    <button
+                      className="cb-button cb-button--ghost cb-button--small"
+                      onClick={() =>
+                        setEditingModel({
+                          providerId: selectedProvider.id,
+                          name: "",
+                          contextWindow: "",
+                        })
+                      }
+                    >
+                      <span className="cb-button__content">
+                        <Plus size={13} strokeWidth={2} style={{ marginRight: 4 }} />
+                        手动添加
+                      </span>
+                    </button>
+                    <button
+                      className="cb-button cb-button--secondary cb-button--small"
+                      onClick={() =>
+                        setImporting((prev) =>
+                          prev && prev.providerId === selectedProvider.id
+                            ? null
+                            : { providerId: selectedProvider.id, apiKey: "" },
+                        )
+                      }
+                    >
+                      <span className="cb-button__content">
+                        <RefreshCw size={13} strokeWidth={2} style={{ marginRight: 4 }} />
+                        拉取模型
+                      </span>
+                    </button>
+                  </div>
                 </div>
-              </li>
-            ))}
-          </ul>
+
+                {modelsOf(selectedProvider.id).length === 0 ? (
+                  <div className="models-settings-panel__models-empty">
+                    该厂商还没有模型。手动添加，或用厂商的 API Key 拉取。
+                  </div>
+                ) : (
+                  <ul className="models-settings-panel__model-list">
+                    {modelsOf(selectedProvider.id).map((m) => (
+                      <li key={m.modelId} className="models-settings-panel__model-item">
+                        <div className="models-settings-panel__model-main">
+                          <div className="models-settings-panel__model-name">
+                            {m.name || m.modelId}
+                          </div>
+                          <div className="models-settings-panel__model-meta">
+                            <span className="models-settings-panel__model-id">{m.modelId}</span>
+                            {m.contextWindow && (
+                              <span className="models-settings-panel__model-cw">
+                                {m.contextWindow.toLocaleString()} ctx
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="models-settings-panel__model-actions">
+                          <button
+                            className="cb-button cb-button--ghost cb-button--small cb-button--icon-only"
+                            onClick={() =>
+                              setEditingModel({
+                                providerId: selectedProvider.id,
+                                original: m,
+                                name: m.name ?? "",
+                                contextWindow: m.contextWindow ? String(m.contextWindow) : "",
+                              })
+                            }
+                            aria-label="编辑模型"
+                            title="编辑模型"
+                          >
+                            <Pencil size={14} strokeWidth={1.75} />
+                          </button>
+                          <button
+                            className="cb-button cb-button--ghost cb-button--small cb-button--icon-only"
+                            onClick={() => handleDeleteModel(m)}
+                            aria-label="删除模型"
+                            title="删除模型"
+                          >
+                            <Trash2 size={14} strokeWidth={1.75} />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {importing?.providerId === selectedProvider.id && (
+                  <ImportModelsInline
+                    provider={selectedProvider}
+                    existingModelIds={new Set(modelsOf(selectedProvider.id).map((m) => m.modelId))}
+                    onClose={() => setImporting(null)}
+                    onImport={(ids) => {
+                      void handleBatchImport(selectedProvider.id, ids).then(() =>
+                        setImporting(null),
+                      );
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
         )}
       </section>
 
-      {msg && (
-        <div className={`settings__msg settings__msg--${msg.kind}`}>{msg.text}</div>
+      {msg && <div className={`settings__msg settings__msg--${msg.kind}`}>{msg.text}</div>}
+
+      {editingProvider && (
+        <ProviderEditor
+          draft={editingProvider.draft}
+          original={editingProvider.original}
+          onCancel={() => setEditingProvider(null)}
+          onSave={handleSaveProvider}
+        />
       )}
 
-      {editing && (
-        <AddModelEditor
-          draft={editing.draft}
-          original={editing.original}
-          existingModelIds={new Set(providers.map((p) => p.modelId))}
-          onCancel={() => setEditing(null)}
-          onSave={handleSave}
+      {editingModel && (
+        <ModelEditor
+          providerId={editingModel.providerId}
+          original={editingModel.original}
+          initialName={editingModel.name}
+          initialContextWindow={editingModel.contextWindow}
+          onCancel={() => setEditingModel(null)}
+          onSave={(name, cw, original) =>
+            handleSaveModel(editingModel.providerId, name, cw, original)
+          }
         />
       )}
     </div>
@@ -494,51 +734,40 @@ function ModelsSettingsPanel({ onModelsChanged }: { onModelsChanged?: () => void
 }
 
 // ---------------------------------------------------------------------------
-// Nested "添加模型" editor dialog (560×318).
+// Provider connection editor dialog (add/edit a [model_providers.<id>] entry).
 // ---------------------------------------------------------------------------
 
-interface EditorDraft {
+interface ProviderDraft {
   providerKind: ProviderKind;
-  modelId: string;
   apiKey: string;
   baseUrl: string;
   apiBackend: ApiBackend;
   authScheme: AuthScheme;
-  name: string;
+  contextWindow: string;
 }
 
-function AddModelEditor({
+function ProviderEditor({
   draft,
   original,
-  existingModelIds,
   onCancel,
   onSave,
 }: {
-  draft: EditorDraft;
-  original?: ProviderConfig;
-  /** Model ids already saved on disk — shown as "已配置" badges in the fetch list. */
-  existingModelIds: Set<string>;
+  draft: ProviderDraft;
+  original?: ModelProviderEntry;
   onCancel: () => void;
-  onSave: (drafts: ProviderConfig[], original?: ProviderConfig) => void;
+  onSave: (draft: ProviderDraft, original?: ModelProviderEntry) => void;
 }) {
-  const [form, setForm] = useState<EditorDraft>({ ...draft });
+  const [form, setForm] = useState<ProviderDraft>({ ...draft });
   const [showKey, setShowKey] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(draft.providerKind === "custom");
   const [error, setError] = useState<string | null>(null);
 
-  // Remote model discovery state.
-  const [fetching, setFetching] = useState(false);
-  const [fetchedModels, setFetchedModels] = useState<FetchedModel[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
   const preset = PRESETS[form.providerKind];
-  const isCustom = form.providerKind === "custom";
-  const hasSelection = selectedIds.size > 0;
+  // "Custom-like" kinds have no preset baseUrl → the user must supply one, so
+  // the Base URL / protocol / auth fields are unlocked. Covers both `custom`
+  // (OpenAI-compatible) and `custom_anthropic` (Anthropic-compatible).
+  const needsBaseUrl = !preset.baseUrl;
 
-  // When the provider preset changes, pre-fill the advanced fields from the
-  // preset (unless the user had overridden them — for a fresh add we always
-  // adopt the preset). Also clears any stale fetch results.
   const handleProviderChange = (kind: ProviderKind) => {
     const p = PRESETS[kind];
     setForm((f) => ({
@@ -548,107 +777,24 @@ function AddModelEditor({
       apiBackend: p.apiBackend ?? f.apiBackend,
       authScheme: p.authScheme ?? f.authScheme,
     }));
-    setShowAdvanced(kind === "custom");
-    setFetchedModels([]);
-    setSelectedIds(new Set());
-    setFetchError(null);
+    setShowAdvanced(!p.baseUrl);
   };
-
-  // Fetch available models from the provider's /models endpoint.
-  const handleFetch = async () => {
-    setFetchError(null);
-    const key = form.apiKey.trim();
-    const baseUrl = form.baseUrl.trim();
-    if (!key) {
-      setFetchError("请先填写 API Key。");
-      return;
-    }
-    if (isCustom && !baseUrl) {
-      setFetchError("自定义提供商必须填写 Base URL。");
-      return;
-    }
-    setFetching(true);
-    try {
-      const models = await providersFetchModels(
-        form.providerKind,
-        key,
-        baseUrl || undefined,
-      );
-      if (models.length === 0) {
-        setFetchError("该端点没有返回任何模型。");
-      }
-      setFetchedModels(models);
-      setSelectedIds(new Set());
-    } catch (e) {
-      setFetchedModels([]);
-      setSelectedIds(new Set());
-      setFetchError(String(e));
-    } finally {
-      setFetching(false);
-    }
-  };
-
-  const toggleModel = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAll = () => {
-    if (selectedIds.size === fetchedModels.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(fetchedModels.map((m) => m.id)));
-    }
-  };
-
-  // Build a ProviderConfig for a given model id, sharing the form's
-  // key/url/backend/authScheme. For the api_key: when editing an existing
-  // entry and the user left the key blank, we send undefined (unchanged);
-  // for a fresh add the key is required.
-  const buildConfig = (modelId: string): ProviderConfig => ({
-    providerKind: form.providerKind,
-    modelId,
-    apiKey: form.apiKey.trim() || undefined,
-    baseUrl: form.baseUrl.trim() || undefined,
-    apiBackend: form.apiBackend,
-    authScheme: form.authScheme,
-    name: form.name.trim() || undefined,
-  });
 
   const canSave = (() => {
-    // Batch path: at least one model selected from the fetch list.
-    if (hasSelection) {
-      if (isCustom && !form.baseUrl.trim()) return false;
-      return true;
-    }
-    // Single-model path (manual modelId input).
-    if (!form.modelId.trim()) return false;
-    if (isCustom && !form.baseUrl.trim()) return false;
-    // For a new entry (no original), require an api key OR an existing entry
-    // already on disk (original present means key is optional on re-edit).
+    if (needsBaseUrl && !form.baseUrl.trim()) return false;
+    // New provider requires a key; editing allows blank (unchanged).
     if (!original && !form.apiKey.trim()) return false;
-    if (form.apiKey.startsWith("•")) return false; // mask, no-op
+    if (form.apiKey.startsWith("•")) return false;
     return true;
   })();
 
   const handleSaveClick = () => {
     setError(null);
     if (!canSave) {
-      setError(hasSelection ? "请填写 API Key 和 Base URL。" : "请填写必填字段（模型名称、API Key）。");
+      setError(needsBaseUrl && !form.baseUrl.trim() ? "请填写 Base URL。" : "请填写 API Key。");
       return;
     }
-    if (hasSelection) {
-      // Batch: one ProviderConfig per selected model id, sharing key/url.
-      const drafts = [...selectedIds].map(buildConfig);
-      onSave(drafts, original);
-    } else {
-      // Single model (manual entry).
-      onSave([buildConfig(form.modelId.trim())], original);
-    }
+    onSave(form, original);
   };
 
   return (
@@ -657,10 +803,14 @@ function AddModelEditor({
         <header className="models-settings-panel__editor-header">
           <div className="models-settings-panel__editor-title-group">
             <div className="models-settings-panel__editor-title">
-              {original ? "编辑模型" : "添加模型"}
+              {original ? "编辑厂商" : "添加厂商"}
             </div>
             <div className="models-settings-panel__editor-note">
-              {isCustom ? "自定义 OpenAI 兼容协议 API" : "支持 OpenAI / Anthropic / xAI 等协议"}
+              {form.providerKind === "custom"
+                ? "自定义 OpenAI 兼容协议 API"
+                : form.providerKind === "custom_anthropic"
+                  ? "自定义 Anthropic 兼容协议 API"
+                  : "支持 OpenAI / Anthropic / xAI 等协议"}
             </div>
           </div>
           <button
@@ -673,34 +823,34 @@ function AddModelEditor({
         </header>
 
         <div className="models-settings-panel__editor-body">
-          {/* 提供商 */}
           <div className="models-settings-panel__field">
-            <div className="models-settings-panel__field-header">
-              <label className="models-settings-panel__label">提供商</label>
-            </div>
+            <label className="models-settings-panel__label">提供商</label>
             <div className="models-settings-panel__select-shell">
               <select
                 className="models-settings-panel__select"
                 value={form.providerKind}
                 onChange={(e) => handleProviderChange(e.target.value as ProviderKind)}
               >
-                {(["anthropic", "openai", "grok", "deepseek", "qwen", "custom"] as ProviderKind[]).map(
-                  (k) => (
-                    <option key={k} value={k}>
-                      {PRESETS[k].label}
-                    </option>
-                  )
-                )}
+                {(
+                  [
+                    "anthropic",
+                    "openai",
+                    "grok",
+                    "deepseek",
+                    "qwen",
+                    "custom",
+                    "custom_anthropic",
+                  ] as ProviderKind[]
+                ).map((k) => (
+                  <option key={k} value={k}>
+                    {PRESETS[k].label}
+                  </option>
+                ))}
               </select>
-              <ChevronDown
-                size={14}
-                strokeWidth={1.75}
-                className="models-settings-panel__select-arrow"
-              />
+              <ChevronDown size={14} strokeWidth={1.75} className="models-settings-panel__select-arrow" />
             </div>
           </div>
 
-          {/* API Key */}
           <div className="models-settings-panel__field">
             <label className="models-settings-panel__label">API Key</label>
             <div className="models-settings-panel__input-shell">
@@ -709,9 +859,7 @@ function AddModelEditor({
                 type={showKey ? "text" : "password"}
                 value={form.apiKey}
                 onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
-                placeholder={
-                  original ? "已保存（重新输入以替换，留空保持不变）" : preset.placeholderKey
-                }
+                placeholder={original ? "已保存（重新输入以替换，留空保持不变）" : preset.placeholderKey}
               />
               <button
                 className="cb-button cb-button--ghost cb-button--small cb-button--icon-only models-settings-panel__input-toggle"
@@ -724,111 +872,20 @@ function AddModelEditor({
             </div>
           </div>
 
-          {/* 获取可用模型 */}
           <div className="models-settings-panel__field">
-            <label className="models-settings-panel__label">从供应商获取模型</label>
-            <div className="models-settings-panel__fetch-row">
-              <button
-                className="cb-button cb-button--secondary cb-button--small models-settings-panel__fetch-btn"
-                onClick={handleFetch}
-                disabled={fetching}
-                type="button"
-              >
-                <span className="cb-button__content">
-                  {fetching ? (
-                    <Loader2 size={13} strokeWidth={2} className="models-settings-panel__spin" />
-                  ) : (
-                    <RefreshCw size={13} strokeWidth={2} style={{ marginRight: 4 }} />
-                  )}
-                  {fetching ? "获取中…" : "获取可用模型"}
-                </span>
-              </button>
-              <span className="models-settings-panel__fetch-hint">
-                自动从 {isCustom ? "Base URL" : preset.label} 的 /models 拉取
-              </span>
-            </div>
-
-            {fetchError && (
-              <div className="models-settings-panel__fetch-error">{fetchError}</div>
-            )}
-
-            {fetchedModels.length > 0 && (
-              <div className="models-settings-panel__fetch-list">
-                <div className="models-settings-panel__fetch-list-header">
-                  <span>
-                    找到 {fetchedModels.length} 个模型
-                    {hasSelection && ` · 已选 ${selectedIds.size}`}
-                  </span>
-                  <button
-                    className="cb-button cb-button--ghost cb-button--small models-settings-panel__fetch-select-all"
-                    onClick={toggleAll}
-                    type="button"
-                  >
-                    {selectedIds.size === fetchedModels.length ? "全不选" : "全选"}
-                  </button>
-                </div>
-                <ul className="models-settings-panel__fetch-items">
-                  {fetchedModels.map((m) => {
-                    const checked = selectedIds.has(m.id);
-                    const configured = existingModelIds.has(m.id);
-                    return (
-                      <li key={m.id}>
-                        <label className="models-settings-panel__fetch-item">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleModel(m.id)}
-                          />
-                          <span className="models-settings-panel__fetch-item-id">{m.id}</span>
-                          {m.ownedBy && (
-                            <span className="models-settings-panel__fetch-item-owner">
-                              {m.ownedBy}
-                            </span>
-                          )}
-                          {configured && (
-                            <span className="models-settings-panel__fetch-item-badge">已配置</span>
-                          )}
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-          </div>
-
-          {/* 模型名称 */}
-          <div className="models-settings-panel__field">
-            <label className="models-settings-panel__label">
-              模型名称
-              {hasSelection && (
-                <span className="models-settings-panel__label-hint">
-                  已选 {selectedIds.size} 个（将批量保存）
-                </span>
-              )}
-            </label>
+            <label className="models-settings-panel__label">上下文窗口（tokens，可选）</label>
             <div className="models-settings-panel__input-shell">
               <input
                 className="models-settings-panel__input"
-                value={hasSelection ? "" : form.modelId}
-                onChange={(e) => setForm((f) => ({ ...f, modelId: e.target.value }))}
-                placeholder={
-                  hasSelection
-                    ? `已勾选 ${selectedIds.size} 个模型，留空即可批量保存`
-                    : "如 gpt-4o、claude-sonnet-4-5、deepseek-chat"
-                }
-                disabled={hasSelection}
-                list="model-suggestions"
+                type="number"
+                min={1}
+                value={form.contextWindow}
+                onChange={(e) => setForm((f) => ({ ...f, contextWindow: e.target.value }))}
+                placeholder="如 128000（留空用厂商默认）"
               />
-              <datalist id="model-suggestions">
-                {preset.models.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
             </div>
           </div>
 
-          {/* 高级折叠区 */}
           <button
             className="models-settings-panel__advanced-toggle"
             onClick={() => setShowAdvanced((s) => !s)}
@@ -855,7 +912,7 @@ function AddModelEditor({
                     value={form.baseUrl}
                     onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
                     placeholder="https://api.example.com/v1"
-                    disabled={!isCustom}
+                    disabled={!!preset.baseUrl}
                   />
                 </div>
               </div>
@@ -869,17 +926,13 @@ function AddModelEditor({
                       onChange={(e) =>
                         setForm((f) => ({ ...f, apiBackend: e.target.value as ApiBackend }))
                       }
-                      disabled={!isCustom}
+                      disabled={!!preset.apiBackend}
                     >
                       <option value="chat_completions">chat_completions</option>
                       <option value="responses">responses</option>
                       <option value="messages">messages</option>
                     </select>
-                    <ChevronDown
-                      size={14}
-                      strokeWidth={1.75}
-                      className="models-settings-panel__select-arrow"
-                    />
+                    <ChevronDown size={14} strokeWidth={1.75} className="models-settings-panel__select-arrow" />
                   </div>
                 </div>
                 <div className="models-settings-panel__field">
@@ -891,28 +944,13 @@ function AddModelEditor({
                       onChange={(e) =>
                         setForm((f) => ({ ...f, authScheme: e.target.value as AuthScheme }))
                       }
-                      disabled={!isCustom}
+                      disabled={!!preset.authScheme}
                     >
                       <option value="bearer">bearer</option>
                       <option value="x_api_key">x_api_key</option>
                     </select>
-                    <ChevronDown
-                      size={14}
-                      strokeWidth={1.75}
-                      className="models-settings-panel__select-arrow"
-                    />
+                    <ChevronDown size={14} strokeWidth={1.75} className="models-settings-panel__select-arrow" />
                   </div>
-                </div>
-              </div>
-              <div className="models-settings-panel__field">
-                <label className="models-settings-panel__label">显示名称（可选）</label>
-                <div className="models-settings-panel__input-shell">
-                  <input
-                    className="models-settings-panel__input"
-                    value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="如 我的 GPT-4o"
-                  />
                 </div>
               </div>
             </div>
@@ -937,6 +975,272 @@ function AddModelEditor({
           </button>
         </footer>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Single-model editor dialog (display name + optional per-model context window).
+// ---------------------------------------------------------------------------
+
+function ModelEditor({
+  providerId,
+  original,
+  initialName,
+  initialContextWindow,
+  onCancel,
+  onSave,
+}: {
+  providerId: string;
+  original?: ModelEntry;
+  initialName: string;
+  initialContextWindow: string;
+  onCancel: () => void;
+  onSave: (name: string, contextWindow: string, original?: ModelEntry) => void;
+}) {
+  const [modelId, setModelId] = useState(original?.modelId ?? "");
+  const [name, setName] = useState(initialName);
+  const [contextWindow, setContextWindow] = useState(initialContextWindow);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSave = modelId.trim().length > 0;
+
+  const handleSaveClick = () => {
+    setError(null);
+    if (!canSave) {
+      setError("请填写模型 ID。");
+      return;
+    }
+    // modelId is the [model.<id>] key — if changed from the original, that's a
+    // new entry; the caller saves under the new id. We pass the (possibly new)
+    // id through onSave via the original's slot so the parent can delete+create.
+    onSave(name, contextWindow, original ? { ...original, modelId: modelId.trim() } : undefined);
+  };
+
+  return (
+    <div className="models-settings-panel__editor-overlay" role="dialog" aria-modal="true">
+      <div className="models-settings-panel__editor models-settings-panel__editor--narrow">
+        <header className="models-settings-panel__editor-header">
+          <div className="models-settings-panel__editor-title-group">
+            <div className="models-settings-panel__editor-title">
+              {original ? "编辑模型" : "添加模型"}
+            </div>
+            <div className="models-settings-panel__editor-note">所属厂商：{providerId}</div>
+          </div>
+          <button
+            className="cb-button cb-button--ghost cb-button--small cb-button--icon-only"
+            onClick={onCancel}
+            aria-label="关闭"
+          >
+            <X size={14} strokeWidth={1.75} />
+          </button>
+        </header>
+
+        <div className="models-settings-panel__editor-body">
+          <div className="models-settings-panel__field">
+            <label className="models-settings-panel__label">模型 ID</label>
+            <div className="models-settings-panel__input-shell">
+              <input
+                className="models-settings-panel__input"
+                value={modelId}
+                onChange={(e) => setModelId(e.target.value)}
+                placeholder="如 gpt-4o、claude-sonnet-4-5、deepseek-chat"
+                disabled={!!original}
+              />
+            </div>
+          </div>
+          <div className="models-settings-panel__field">
+            <label className="models-settings-panel__label">显示名称（可选）</label>
+            <div className="models-settings-panel__input-shell">
+              <input
+                className="models-settings-panel__input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="如 我的 GPT-4o"
+              />
+            </div>
+          </div>
+          <div className="models-settings-panel__field">
+            <label className="models-settings-panel__label">
+              上下文窗口（tokens，可选，覆盖厂商设置）
+            </label>
+            <div className="models-settings-panel__input-shell">
+              <input
+                className="models-settings-panel__input"
+                type="number"
+                min={1}
+                value={contextWindow}
+                onChange={(e) => setContextWindow(e.target.value)}
+                placeholder="如 128000（留空用厂商默认）"
+              />
+            </div>
+          </div>
+          {error && <div className="models-settings-panel__editor-error">{error}</div>}
+        </div>
+
+        <footer className="models-settings-panel__editor-footer">
+          <button
+            className="cb-button cb-button--secondary cb-button--medium models-settings-panel__editor-cancel"
+            onClick={onCancel}
+          >
+            <span className="cb-button__content">取消</span>
+          </button>
+          <button
+            className="cb-button cb-button--primary cb-button--medium models-settings-panel__editor-save"
+            onClick={handleSaveClick}
+            disabled={!canSave}
+          >
+            <span className="cb-button__content">保存</span>
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inline "拉取模型" panel: enter API key → GET /models → pick many → import.
+// ---------------------------------------------------------------------------
+
+function ImportModelsInline({
+  provider,
+  existingModelIds,
+  onClose,
+  onImport,
+}: {
+  provider: ModelProviderEntry;
+  existingModelIds: Set<string>;
+  onClose: () => void;
+  onImport: (ids: string[]) => void;
+}) {
+  const [apiKey, setApiKey] = useState("");
+  const [fetching, setFetching] = useState(false);
+  const [fetched, setFetched] = useState<FetchedModel[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleFetch = async () => {
+    setErr(null);
+    const key = apiKey.trim();
+    if (!key) {
+      setErr("请填写该厂商的 API Key 以拉取模型列表。");
+      return;
+    }
+    setFetching(true);
+    try {
+      const models = await providersFetchModels(
+        provider.providerKind,
+        key,
+        provider.baseUrl ?? undefined,
+      );
+      if (models.length === 0) setErr("该端点没有返回任何模型。");
+      setFetched(models);
+      setSelected(new Set());
+    } catch (e) {
+      setFetched([]);
+      setErr(String(e));
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleAll = () =>
+    setSelected(
+      selected.size === fetched.length ? new Set() : new Set(fetched.map((m) => m.id)),
+    );
+
+  return (
+    <div className="models-settings-panel__import">
+      <div className="models-settings-panel__import-row">
+        <input
+          className="models-settings-panel__input"
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder="API Key（仅用于本次拉取，不会保存）"
+        />
+        <button
+          className="cb-button cb-button--secondary cb-button--small"
+          onClick={handleFetch}
+          disabled={fetching}
+          type="button"
+        >
+          <span className="cb-button__content">
+            {fetching ? (
+              <Loader2 size={13} strokeWidth={2} className="models-settings-panel__spin" />
+            ) : (
+              <RefreshCw size={13} strokeWidth={2} style={{ marginRight: 4 }} />
+            )}
+            {fetching ? "获取中…" : "获取"}
+          </span>
+        </button>
+        <button
+          className="cb-button cb-button--ghost cb-button--small cb-button--icon-only"
+          onClick={onClose}
+          aria-label="关闭"
+          type="button"
+        >
+          <X size={14} strokeWidth={1.75} />
+        </button>
+      </div>
+
+      {err && <div className="models-settings-panel__fetch-error">{err}</div>}
+
+      {fetched.length > 0 && (
+        <div className="models-settings-panel__fetch-list">
+          <div className="models-settings-panel__fetch-list-header">
+            <span>
+              找到 {fetched.length} 个模型
+              {selected.size > 0 && ` · 已选 ${selected.size}`}
+            </span>
+            <button
+              className="cb-button cb-button--ghost cb-button--small models-settings-panel__fetch-select-all"
+              onClick={toggleAll}
+              type="button"
+            >
+              {selected.size === fetched.length ? "全不选" : "全选"}
+            </button>
+          </div>
+          <ul className="models-settings-panel__fetch-items">
+            {fetched.map((m) => {
+              const checked = selected.has(m.id);
+              const configured = existingModelIds.has(m.id);
+              return (
+                <li key={m.id}>
+                  <label className="models-settings-panel__fetch-item">
+                    <input type="checkbox" checked={checked} onChange={() => toggle(m.id)} />
+                    <span className="models-settings-panel__fetch-item-id">{m.id}</span>
+                    {m.ownedBy && (
+                      <span className="models-settings-panel__fetch-item-owner">{m.ownedBy}</span>
+                    )}
+                    {configured && (
+                      <span className="models-settings-panel__fetch-item-badge">已配置</span>
+                    )}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="models-settings-panel__import-footer">
+            <button
+              className="cb-button cb-button--primary cb-button--small"
+              disabled={selected.size === 0}
+              onClick={() => onImport([...selected])}
+              type="button"
+            >
+              <span className="cb-button__content">导入 {selected.size > 0 ? selected.size : ""} 个模型</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

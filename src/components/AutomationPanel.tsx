@@ -42,6 +42,7 @@ import {
   grokListWorkspaces,
   mcpList,
   providersList,
+  flattenModels,
   skillsList,
   type WorkspaceInfo,
 } from "@/lib/grok-client";
@@ -201,7 +202,7 @@ export function AutomationPanel({ onToast, onNavigate }: AutomationPanelProps) {
   useEffect(() => {
     grokListWorkspaces().then(setWorkspaces).catch(() => setWorkspaces([]));
     providersList()
-      .then((list) => setModels(list.map((m) => ({ id: m.modelId, label: m.name || m.modelId }))))
+      .then((list) => setModels(flattenModels(list)))
       .catch(() => setModels([]));
     skillsList().then(setSkills).catch(() => setSkills([]));
     agentsList().then(setExperts).catch(() => setExperts([]));

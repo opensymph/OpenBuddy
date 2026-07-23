@@ -28,6 +28,9 @@ pub struct ExpertBinding {
     pub expert_name: String,
     /// "marketplace" | "local".
     pub source: String,
+    /// Local avatar image path (for the topbar/composer badge).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_local: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,6 +201,7 @@ mod tests {
             version: 1,
             pinned_sessions: vec!["s1".into(), "s2".into(), "s1".into()],
             archived_sessions: vec![],
+            expert_sessions: HashMap::new(),
         };
         let set = state.pinned_set();
         assert_eq!(set.len(), 2); // deduplicated
@@ -211,6 +215,7 @@ mod tests {
             version: 1,
             pinned_sessions: vec![],
             archived_sessions: vec!["a1".into(), "a2".into()],
+            expert_sessions: HashMap::new(),
         };
         let set = state.archived_set();
         assert_eq!(set.len(), 2);
@@ -233,6 +238,7 @@ mod tests {
             version: 1,
             pinned_sessions: vec!["s1".into()],
             archived_sessions: vec!["a1".into(), "a2".into()],
+            expert_sessions: HashMap::new(),
         };
         let json = serde_json::to_string(&state).unwrap();
         let parsed: OpenBuddyState = serde_json::from_str(&json).unwrap();

@@ -9,6 +9,10 @@ import { ChevronDown, Check } from "lucide-react";
 export interface ModelOption {
   id: string;
   label?: string;
+  /** Optional provider kind, used to group/sort models in the dropdown. */
+  providerKind?: string;
+  /** Optional provider id this model belongs to. */
+  providerId?: string;
 }
 
 export function ModelSelector({

@@ -67,12 +67,18 @@ export function ChatView({
   const draft = useSessionsStore((s) =>
     sessionId ? s.drafts[sessionId] ?? "" : ""
   );
-  // Read the expert name bound to the current session (for the composer badge).
+  // Read the expert name + avatar bound to the current session (for the composer badge).
   const activeExpertName = useSessionsStore((s) => {
     if (!sessionId) return undefined;
     const entry = s.independent.find((x) => x.sessionId === sessionId)
       ?? Object.values(s.workspaceSessions).flat().find((x) => x.sessionId === sessionId);
     return entry?.expertName;
+  });
+  const activeExpertAvatar = useSessionsStore((s) => {
+    if (!sessionId) return undefined;
+    const entry = s.independent.find((x) => x.sessionId === sessionId)
+      ?? Object.values(s.workspaceSessions).flat().find((x) => x.sessionId === sessionId);
+    return entry?.expertAvatar;
   });
   const [planOpen, setPlanOpen] = useState(false);
 
@@ -308,7 +314,9 @@ export function ChatView({
             onSelectExpert={onSelectExpert}
             onNavigateConnectors={onNavigateConnectors}
             activeExpertName={activeExpertName}
+            activeExpertAvatar={activeExpertAvatar}
             usageSessionId={sessionId ?? undefined}
+            usageMsgCount={messages.length}
           />
         </div>
       </div>

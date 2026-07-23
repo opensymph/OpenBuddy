@@ -2202,6 +2202,14 @@ button.diff__path {
   color: var(--wb-accent, var(--wb-text-secondary));
   font-weight: 400;
 }
+.models-settings-panel__field--hint {
+  padding: 0;
+}
+.models-settings-panel__label-hint-note {
+  font-size: 11px;
+  color: var(--wb-text-secondary);
+  line-height: 1.5;
+}
 .models-settings-panel__spin {
   animation: models-spin 0.8s linear infinite;
   margin-right: 4px;
@@ -2210,6 +2218,216 @@ button.diff__path {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---- grouped provider/model view (one provider → many models) ---- */
+.models-settings-panel__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.models-settings-panel__section-head .models-settings-panel__section-title {
+  margin: 0;
+}
+.models-settings-panel__grouped-note {
+  margin-bottom: 12px;
+}
+.models-settings-panel__grouped {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.models-settings-panel__provider-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--wb-border-default);
+  border-radius: 6px;
+  background: var(--wb-bg-primary);
+  padding: 6px;
+}
+.models-settings-panel__provider-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+.models-settings-panel__provider-item:hover {
+  background: var(--wb-bg-tertiary, #f3f4f6);
+}
+.models-settings-panel__provider-item--active {
+  background: var(--wb-bg-tertiary, #eef0f3);
+}
+.models-settings-panel__provider-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wb-text-strong);
+}
+.models-settings-panel__provider-meta {
+  font-size: 11px;
+  color: var(--wb-text-tertiary);
+}
+.models-settings-panel__provider-detail {
+  border: 1px solid var(--wb-border-default);
+  border-radius: 6px;
+  background: var(--wb-bg-primary);
+  padding: 14px;
+  min-width: 0;
+}
+.models-settings-panel__provider-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.models-settings-panel__provider-detail-title {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--wb-text-strong);
+}
+.models-settings-panel__provider-detail-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.models-settings-panel__provider-fields {
+  margin: 0 0 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+.models-settings-panel__provider-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.models-settings-panel__provider-field dt {
+  font-size: 11px;
+  color: var(--wb-text-tertiary);
+}
+.models-settings-panel__provider-field dd {
+  margin: 0;
+  font-size: 12px;
+  color: var(--wb-text-medium);
+  word-break: break-all;
+}
+.models-settings-panel__models-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+.models-settings-panel__models-head-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wb-text-strong);
+}
+.models-settings-panel__models-head-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.models-settings-panel__models-empty {
+  font-size: 12px;
+  color: var(--wb-text-tertiary);
+  padding: 12px 0;
+}
+.models-settings-panel__model-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.models-settings-panel__model-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--wb-border-default);
+  border-radius: 5px;
+  background: var(--wb-bg-primary);
+}
+.models-settings-panel__model-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.models-settings-panel__model-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--wb-text-strong);
+}
+.models-settings-panel__model-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.models-settings-panel__model-id {
+  font-family: var(--wb-font-mono, monospace);
+  font-size: 11px;
+  color: var(--wb-text-tertiary);
+}
+.models-settings-panel__model-cw {
+  font-size: 10px;
+  color: var(--wb-text-tertiary);
+  background: var(--wb-bg-tertiary);
+  border: 1px solid var(--wb-border);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.models-settings-panel__model-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.models-settings-panel__editor--narrow {
+  width: 440px;
+  max-width: calc(100vw - 48px);
+}
+
+/* inline 拉取模型 panel */
+.models-settings-panel__import {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed var(--wb-border-default);
+  border-radius: 6px;
+  background: var(--wb-bg-tertiary, #f9fafb);
+}
+.models-settings-panel__import-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.models-settings-panel__import-row .models-settings-panel__input {
+  flex: 1;
+  min-width: 0;
+}
+.models-settings-panel__import-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 
 /* ---- shared cb-button system (used across the settings UI) ---- */
@@ -10128,9 +10346,10 @@ button.diff__path {
 .context-usage__pill {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   height: 24px;
-  padding: 0 10px;
-  border: 1px solid var(--wb-border-default);
+  padding: 0 6px 0 2px;
+  border: none;
   border-radius: 999px;
   background: transparent;
   color: var(--wb-text-weak);
@@ -10144,6 +10363,24 @@ button.diff__path {
 .context-usage__pill--open {
   background: var(--wb-bg-hover);
   color: var(--wb-text-medium);
+}
+.context-usage__ring {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+.context-usage__ring-track {
+  stroke: var(--wb-border-default);
+  stroke-width: 2;
+}
+.context-usage__ring-progress {
+  stroke: var(--wb-accent, #6366f1);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+.context-usage__pill-text {
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 .context-usage__popover {
   position: absolute;

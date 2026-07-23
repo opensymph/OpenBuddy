@@ -58,9 +58,14 @@ pub fn run() {
             commands::grok_session_usage,
             // BYOK providers (~/.grok/config.toml [model.*])
             providers::providers_list,
+            providers::providers_save_provider,
+            providers::providers_save_model,
+            providers::providers_delete_provider,
+            providers::providers_delete_model,
+            providers::providers_fetch_models,
+            // Deprecated shims kept registered for back-compat.
             providers::providers_save,
             providers::providers_delete,
-            providers::providers_fetch_models,
             // default permission rules (~/.grok/config.toml [permission])
             permission_config::permission_list,
             permission_config::permission_save,

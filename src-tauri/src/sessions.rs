@@ -35,6 +35,9 @@ pub struct SessionSummary {
     /// Expert display name (OpenBuddy-only state).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expert_name: Option<String>,
+    /// Expert local avatar path (OpenBuddy-only state).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expert_avatar: Option<String>,
 }
 
 /// Subset of grok's `Summary` struct (see `xai-grok-shell/src/session/persistence.rs:790`).
@@ -158,6 +161,7 @@ pub fn list_sessions(cwd: &str) -> Vec<SessionSummary> {
                 current_model_id: s.current_model_id.clone(),
                 expert_id: None,
                 expert_name: None,
+                expert_avatar: None,
             });
         }
     }
@@ -175,6 +179,7 @@ pub fn list_sessions(cwd: &str) -> Vec<SessionSummary> {
         if let Some(binding) = experts.get(&entry.session_id) {
             entry.expert_id = Some(binding.expert_id.clone());
             entry.expert_name = Some(binding.expert_name.clone());
+            entry.expert_avatar = binding.avatar_local.clone();
         }
     }
     // Sort: pinned first, then by updated_at descending (falling back to the

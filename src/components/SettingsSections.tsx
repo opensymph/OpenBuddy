@@ -48,9 +48,10 @@ import {
   notificationMarkRead,
   permissionList,
   providersList,
+  flattenModels,
   skillsList,
   type AuthStatus,
-  type ProviderConfig,
+  type ModelOptionRow,
 } from "@/lib/grok-client";
 import type {
   AgentDefaults,
@@ -817,7 +818,7 @@ const PERMISSION_OPTIONS: { value: string; label: string }[] = [
  *  [models].default 和 [ui].default_selected_permission。 */
 export function AssistantSettingsPanel() {
   const [agents, setAgents] = useState<AgentEntry[]>([]);
-  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [providers, setProviders] = useState<ModelOptionRow[]>([]);
   const [defaults, setDefaults] = useState<AgentDefaults | null>(null);
   const [draft, setDraft] = useState<AgentDefaults>({
     defaultModel: "",
@@ -834,7 +835,9 @@ export function AssistantSettingsPanel() {
     try {
       const [ag, prov, def] = await Promise.all([
         agentsList().catch(() => [] as AgentEntry[]),
-        providersList().catch(() => [] as ProviderConfig[]),
+        providersList()
+          .then(flattenModels)
+          .catch(() => [] as ModelOptionRow[]),
         agentsDefaultsGet(),
       ]);
       setAgents(ag);
@@ -928,8 +931,8 @@ export function AssistantSettingsPanel() {
               >
                 <option value="">grok 内置默认</option>
                 {providers.map((p) => (
-                  <option key={p.modelId} value={p.modelId}>
-                    {p.name || p.modelId}（{p.modelId}）
+                  <option key={p.id} value={p.id}>
+                    {p.label}（{p.id}）
                   </option>
                 ))}
               </select>

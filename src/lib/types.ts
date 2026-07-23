@@ -279,6 +279,8 @@ export interface SessionSummary {
   expertId?: string;
   /** Expert display name (OpenBuddy-only state). */
   expertName?: string;
+  /** Expert local avatar path (OpenBuddy-only state). */
+  expertAvatar?: string;
   /** Lifecycle status for sidebar task filtering. Absent = "completed". */
   status?: SessionStatus;
 }

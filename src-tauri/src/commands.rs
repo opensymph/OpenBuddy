@@ -133,12 +133,12 @@ pub async fn grok_init(
         let _ = grok::authenticate(&tx, method).await;
     }
 
-    let providers = crate::providers::providers_list();
-    let provider_ids: Vec<String> = providers.iter().map(|p| p.model_id.clone()).collect();
+    let list = crate::providers::providers_list();
+    let model_ids: Vec<String> = list.models.iter().map(|m| m.model_id.clone()).collect();
     // Usable if EITHER grok OAuth is set up OR at least one BYOK provider
     // is configured. The OAuth-only path requires `auth.json`; the BYOK path
     // only needs `[model.*]` entries in config.toml.
-    let ready = auth_ok || !provider_ids.is_empty();
+    let ready = auth_ok || !model_ids.is_empty();
 
     // Start the automations scheduler now that the agent channel is up.
     // Idempotent — safe if grok_init is somehow called twice.
@@ -151,7 +151,7 @@ pub async fn grok_init(
         auth: AuthStatus {
             ready,
             has_auth_file: auth_ok,
-            providers: provider_ids,
+            providers: model_ids,
             reason: if ready {
                 None
             } else {
@@ -171,13 +171,13 @@ pub async fn grok_init(
 #[tauri::command]
 pub fn grok_auth_status(_state: State<'_, AppState>) -> AuthStatus {
     let has = has_auth_file();
-    let providers = crate::providers::providers_list();
-    let provider_ids: Vec<String> = providers.iter().map(|p| p.model_id.clone()).collect();
-    let ready = has || !provider_ids.is_empty();
+    let list = crate::providers::providers_list();
+    let model_ids: Vec<String> = list.models.iter().map(|m| m.model_id.clone()).collect();
+    let ready = has || !model_ids.is_empty();
     AuthStatus {
         ready,
         has_auth_file: has,
-        providers: provider_ids,
+        providers: model_ids,
         reason: if ready {
             None
         } else {
@@ -453,6 +453,7 @@ pub fn grok_set_session_expert(
     expert_id: String,
     expert_name: String,
     source: String,
+    avatar_local: Option<String>,
 ) -> Result<bool, String> {
     crate::meta::set_expert(
         &session_id,
@@ -460,6 +461,7 @@ pub fn grok_set_session_expert(
             expert_id,
             expert_name,
             source,
+            avatar_local,
         },
     )
 }

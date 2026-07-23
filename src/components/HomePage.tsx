@@ -331,6 +331,7 @@ export function HomePage({
             onSelectExpert={onSelectExpert}
             onNavigateConnectors={onNavigateConnectors}
             activeExpertName={pendingExpert?.name}
+            activeExpertAvatar={pendingExpert?.avatarLocal}
           />
         </section>
       </div>

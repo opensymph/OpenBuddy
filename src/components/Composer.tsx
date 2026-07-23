@@ -3,6 +3,7 @@ import { Mic, X, type LucideIcon } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ChevronDownIcon, SendPlaneIcon } from "@/foundation/components/Icon/icons";
 import { ModelSelector, type ModelOption } from "./ModelSelector";
+import { ThumbImg } from "./experts-panel/shared/ThumbImg";
 import { ContextUsagePill } from "./ContextUsagePill";
 import { WorkspacePicker } from "./WorkspacePicker";
 import { PermissionPicker } from "./PermissionPicker";
@@ -59,8 +60,11 @@ export function Composer({
   onNavigateConnectors,
   /** Name of the expert currently bound to this session (shown as badge in footer). */
   activeExpertName,
+  /** Local avatar path for the expert badge. */
+  activeExpertAvatar,
   /** Session id powering the context-usage pill (omit on the home page). */
   usageSessionId,
+  usageMsgCount,
 }: {
   streaming: boolean;
   disabled?: boolean;
@@ -119,8 +123,12 @@ export function Composer({
   onNavigateConnectors?: () => void;
   /** Name of the expert currently bound to this session (shown as badge in footer). */
   activeExpertName?: string;
+  /** Local avatar path for the expert badge. */
+  activeExpertAvatar?: string;
   /** Session id powering the context-usage pill (omit on the home page). */
   usageSessionId?: string;
+  /** Triggers pill re-fetch when messages change. */
+  usageMsgCount?: number;
 }) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -450,7 +458,7 @@ export function Composer({
           />
           {activeExpertName && (
             <span className="wb-composer__expert-badge" title={`当前专家：${activeExpertName}`}>
-              <span className="wb-composer__expert-dot" />
+              <ThumbImg name={activeExpertName} local={activeExpertAvatar} size={18} shape="circle" />
               {activeExpertName}
             </span>
           )}
@@ -458,7 +466,7 @@ export function Composer({
             <PermissionPicker onToast={onToast} />
           )}
           <div className="wb-composer__spacer" />
-          {usageSessionId && <ContextUsagePill sessionId={usageSessionId} />}
+          {usageSessionId && <ContextUsagePill sessionId={usageSessionId} onRefreshSignal={usageMsgCount} />}
           {showModelPicker ? (
             <ModelSelector
               modelId={modelId}
