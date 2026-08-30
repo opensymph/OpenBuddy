@@ -26,7 +26,7 @@
   <a href="https://github.com/opensymph/OpenBuddy/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/opensymph/OpenBuddy?style=flat-square&logo=starship&logoColor=white&color=yellow"></a>
   <a href="https://github.com/opensymph/OpenBuddy/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/opensymph/OpenBuddy?style=flat-square&logo=forgejo&logoColor=white&color=orange"></a>
   <br/>
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=flat-square&logo=windows10&logoColor=white">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square&logo=windows10&logoColor=white">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-orange?style=flat-square&logo=rust&logoColor=white">
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-red?style=flat-square&logo=tauri&logoColor=white">
@@ -46,7 +46,7 @@
 - 🪶 **安装包小约 14 倍** —— OpenBuddy 的 Windows 安装包 **~34 MB**,而 WorkBuddy 约 **483 MB**。同样形态的产品,体积只有对方的零头。
 - 💨 **运行内存小约 19 倍** —— **~20 MB** vs WorkBuddy 同机 **~374 MB**。把内存还给真正在干的活。
 - ⚙️ **grok 作为进程内库运行** —— 无子进程、无 WebSocket 中转。Agent 跑在你双击的那个二进制文件内的独立 OS 线程上。
-- 🌐 **原生跨平台** —— 一套代码,Windows **和** macOS。
+- 🌐 **原生跨平台** —— 一套代码支持 Windows、macOS 和 Linux。
 - 🔑 **自带 Key (BYOK)** —— 通过 `~/.grok/config.toml` 接入任意模型供应商,纯文本存储,可 diff、可纳入版本管理。
 
 > *"WorkBuddy 是成品,OpenBuddy 是你能读懂、能 fork、真正拥有的那一个。"*
@@ -91,7 +91,7 @@
 Plan 模式(切换 & 查看)· Rewind(回溯 & 分叉)· 子智能体 Tasks(观察 & 取消)· Slash Commands · 本地 Automations 调度器 · 通知中心。
 
 **📦 跨平台安装包**
-Windows(NSIS `.exe` + MSI)与 macOS(`.dmg`)。GitHub Actions CI 自动出包。
+Windows(NSIS `.exe` + MSI)、macOS(`.dmg`)与 Linux(`.deb`)。GitHub Actions CI 自动出包。
 
 </td>
 </tr>
@@ -116,7 +116,7 @@ Windows(NSIS `.exe` + MSI)与 macOS(`.dmg`)。GitHub Actions CI 自动出包。
 | **Plan / Rewind** | ✅ | ✅ |
 | **Windows** | ✅ | ✅ |
 | **macOS** | ✅ | ✅ |
-| **Linux** | 🔜 路线图 | 🔜 |
+| **Linux** | ✅ `.deb` | 🔜 |
 | **自托管 / fork** | ✅ 自己编译 | ❌ |
 | **本地数据 / 离线友好** | ✅ 你的 `~/.grok/`、你的磁盘 | ⚠️ 腾讯托管后端 |
 
@@ -136,7 +136,7 @@ Windows(NSIS `.exe` + MSI)与 macOS(`.dmg`)。GitHub Actions CI 自动出包。
 
 ### 方式 A —— 下载预编译包
 
-前往 **[Releases](https://github.com/opensymph/OpenBuddy/releases)** 页面下载最新安装包(Windows `.exe`/`.msi`、macOS `.dmg`),然后:
+前往 **[Releases](https://github.com/opensymph/OpenBuddy/releases)** 页面下载最新安装包(Windows `.exe`/`.msi`、macOS `.dmg`、Linux `.deb`),然后:
 
 1. 安装并登录 grok 一次:`grok login`(应用复用 `~/.grok/auth.json`)。
 2. 启动 OpenBuddy,完成。
@@ -161,8 +161,9 @@ pnpm tauri dev
 1. **Rust**(stable,约 1.95+)。`rust-toolchain.toml` 在 Windows 上固定 msvc 主机。
 2. **Node 20+** 与 **pnpm**。
 3. 已安装并登录 **grok**(执行一次 `grok login`)。应用复用 `~/.grok/auth.json`。
-4. **protoc** 在 `PATH` 中**且** `PROTOC` 环境变量指向它(grok 的 `xai-grok-tools-api` 构建脚本需要;它自带的 `bin/protoc` 是 DotSlash 脚本,在 Windows 上跑不起来)。
+4. **protoc** 在 `PATH` 中,或 `PROTOC` 环境变量指向它(grok 的 `xai-grok-tools-api` 构建脚本需要真实 protoc 二进制;打包脚本会在 `protoc` 位于 `PATH` 时自动导出 `PROTOC`)。
    - Windows:`choco install protoc`,然后 `setx PROTOC "C:\ProgramData\chocolatey\bin\protoc.exe"`。
+   - Ubuntu/Debian:`sudo apt install -y build-essential curl wget file pkg-config dpkg-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev protobuf-compiler`。
 
 > 首次构建会编译整个 grok 依赖树(rusqlite/git2 内联 C、prost/protobuf、axum、reqwest ……),预计 **5–10 分钟**。之后的增量编译很快。
 
@@ -174,11 +175,12 @@ Windows 专属坑(MSVC 工作负载、网络镜像、grok 源码补丁)见 **[do
 <summary><b>🏗️ 构建安装包</b></summary>
 
 ```bash
-pnpm dist:win    # Windows:NSIS .exe + MSI(需 MSVC link.exe + Windows SDK)
-pnpm dist:mac    # macOS:.dmg(按宿主架构构建;未签名 / 未公证)
+pnpm dist:win      # Windows:NSIS .exe + MSI(需 MSVC link.exe + Windows SDK)
+pnpm dist:mac      # macOS:.dmg(按宿主架构构建;未签名 / 未公证)
+pnpm dist:linux    # Ubuntu/Debian:.deb
 ```
 
-`grok-build` 作为 git submodule 内置于 `vendor/grok-build`(pin 在已验证的 revision)。setup 脚本负责初始化,`pnpm dist:*` 在构建前会校验其存在。
+`grok-build` 作为 git submodule 内置于 `vendor/grok-build`(pin 在已验证的 revision)。setup 脚本负责初始化,`pnpm dist:*` 在构建前会校验其存在。Unix 主机上,`scripts/build.sh` 会临时禁用 Windows-only 的 `rust-toolchain.toml`,构建结束后自动恢复。
 
 </details>
 
@@ -225,7 +227,7 @@ src-tauri/               # Rust 后端
     commands.rs          # #[tauri::command] 表(grok_*)
     sessions.rs          # 列出 ~/.grok/sessions 供侧边栏使用
 
-scripts/                 # build.ps1(Windows)/ build.sh(macOS)
+scripts/                 # build.ps1(Windows)/ build.sh(macOS / Linux)
 docs/                    # WINDOWS_BUILD_NOTES.md —— Windows 构建踩坑笔记
 ```
 
@@ -239,13 +241,12 @@ docs/                    # WINDOWS_BUILD_NOTES.md —— Windows 构建踩坑笔
 - [x] BYOK 多 Provider 配置
 - [x] Skills / MCP / Experts 面
 - [x] Plan 模式 · Rewind · Tasks · Slash Commands · Automations
-- [x] Windows(NSIS + MSI)& macOS(DMG)安装包
+- [x] Windows(NSIS + MSI)、macOS(DMG)& Linux(DEB)安装包
 - [x] CI 发布工作流(GitHub Actions)
 - [ ] SceneTabs 与技能推荐栏
 - [ ] 置顶会话 & 工作空间分组
 - [ ] 权限管理面板
 - [ ] 跨会话搜索
-- [ ] Linux 构建
 - [ ] 代码签名 & 公证
 
 完整待办见 [TODO.md](TODO.md)。

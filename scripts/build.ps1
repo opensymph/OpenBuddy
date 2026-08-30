@@ -68,10 +68,33 @@ Log-Step "Checking toolchain"
 foreach ($cmd in @("pnpm", "cargo", "rustc")) {
     if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
         Log-Err "$cmd not found on PATH."
+        switch ($cmd) {
+            "pnpm" { Log-Info "Install Node 20+ and pnpm first." }
+            "cargo" { Log-Info "Install Rust stable first: https://rustup.rs/" }
+            "rustc" { Log-Info "Install Rust stable first: https://rustup.rs/" }
+        }
         exit 1
     }
     $v = (Invoke-Expression "$cmd --version") 2>$null
     Log-Info ("{0,-7} {1}" -f $cmd, $v)
+}
+
+# grok's build.rs invokes protoc; prefer $env:PROTOC, otherwise use PATH.
+if ($env:PROTOC) {
+    if (-not (Test-Path $env:PROTOC)) {
+        Log-Err "PROTOC is set but the file does not exist: $env:PROTOC"
+        exit 1
+    }
+    Log-Ok "protoc available via PROTOC=$env:PROTOC"
+} else {
+    $protoc = Get-Command protoc -ErrorAction SilentlyContinue
+    if (-not $protoc) {
+        Log-Err "protoc not found on PATH. Install protobuf or set PROTOC to protoc.exe."
+        Log-Info 'Windows: choco install protoc; then setx PROTOC "C:\ProgramData\chocolatey\bin\protoc.exe"'
+        exit 1
+    }
+    $env:PROTOC = $protoc.Source
+    Log-Ok "PROTOC=$env:PROTOC"
 }
 Log-Ok "Core tools present"
 

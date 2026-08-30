@@ -23,7 +23,7 @@ cd "$PROJECT_ROOT"
 
 # Pinned grok-build revision. The Cargo path deps + src-tauri Rust code are
 # written against this version's API. If you bump it, expect to adjust code.
-PINNED_REV="a881e6703f46b01d8c7d4a5437683546df30449d"
+PINNED_REV="c2ad97f87aea4303b6000a2c22128bc91ee76c9b"
 
 # ---------------------------------------------------------------------------
 # 1. Initialize submodule
