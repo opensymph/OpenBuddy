@@ -26,7 +26,7 @@
   <a href="https://github.com/opensymph/OpenBuddy/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/opensymph/OpenBuddy?style=flat-square&logo=starship&logoColor=white&color=yellow"></a>
   <a href="https://github.com/opensymph/OpenBuddy/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/opensymph/OpenBuddy?style=flat-square&logo=forgejo&logoColor=white&color=orange"></a>
   <br/>
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=flat-square&logo=windows10&logoColor=white">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square&logo=windows10&logoColor=white">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-orange?style=flat-square&logo=rust&logoColor=white">
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-red?style=flat-square&logo=tauri&logoColor=white">
@@ -46,7 +46,7 @@
 - 🪶 **~14× smaller installer** — OpenBuddy's Windows installer is **~34 MB**, vs **~483 MB** for WorkBuddy. Same shape of product, a fraction of the bytes.
 - 💨 **~19× less RAM at runtime** — **~20 MB** vs **~374 MB** for WorkBuddy on the same machine. Leaves your actual work room to breathe.
 - ⚙️ **grok as an in-process library** — no subprocess spawning, no WebSocket relay. The agent runs on a dedicated OS thread inside the very binary you double-click.
-- 🌐 **Truly cross-platform** — one codebase, Windows **and** macOS.
+- 🌐 **Truly cross-platform** — one codebase for Windows, macOS, and Linux.
 - 🔑 **Bring Your Own Key** — point at any model provider via `~/.grok/config.toml`, stored as plain text you can diff and version-control.
 
 > *"If WorkBuddy is the polished product, OpenBuddy is the one you can actually read, fork, and own."*
@@ -91,7 +91,7 @@ Bring your own keys. Configure any number of model providers in `~/.grok/config.
 Plan mode (toggle & view) · Rewind (rewind & fork) · sub-agent Tasks (observe & cancel) · Slash Commands · local Automations scheduler · notification center.
 
 **📦 Cross-platform installers**
-Windows (NSIS `.exe` + MSI) and macOS (`.dmg`). CI-built releases via GitHub Actions.
+Windows (NSIS `.exe` + MSI), macOS (`.dmg`), and Linux (`.deb`). CI-built releases via GitHub Actions.
 
 </td>
 </tr>
@@ -116,7 +116,7 @@ Only rows we can actually back up are listed. WorkBuddy's internals aren't publi
 | **Plan / Rewind** | ✅ | ✅ |
 | **Windows** | ✅ | ✅ |
 | **macOS** | ✅ | ✅ |
-| **Linux** | 🔜 Roadmap | 🔜 |
+| **Linux** | ✅ `.deb` | 🔜 |
 | **Self-host / fork** | ✅ Build it yourself | ❌ |
 | **Local data / offline-friendly** | ✅ Your `~/.grok/`, your disk | ⚠️ Tencent-hosted backend |
 
@@ -136,7 +136,7 @@ Only rows we can actually back up are listed. WorkBuddy's internals aren't publi
 
 ### Option A — Download a prebuilt binary
 
-Grab the latest installer from the **[Releases](https://github.com/opensymph/OpenBuddy/releases)** page (Windows `.exe`/`.msi`, macOS `.dmg`), then:
+Grab the latest installer from the **[Releases](https://github.com/opensymph/OpenBuddy/releases)** page (Windows `.exe`/`.msi`, macOS `.dmg`, Linux `.deb`), then:
 
 1. Install grok once: `grok login` (the app reuses `~/.grok/auth.json`).
 2. Launch OpenBuddy. Done.
@@ -161,8 +161,9 @@ pnpm tauri dev
 1. **Rust** (stable, ~1.95+). `rust-toolchain.toml` pins the MSVC host on Windows.
 2. **Node 20+** and **pnpm**.
 3. **grok** installed and logged in (`grok login` once). The app reuses `~/.grok/auth.json`.
-4. **protoc** on `PATH` **and** the `PROTOC` env var pointing at it (grok's `xai-grok-tools-api` build script needs it; its bundled `bin/protoc` is a DotSlash script that doesn't run on Windows).
+4. **protoc** on `PATH` or `PROTOC` pointing at it (grok's `xai-grok-tools-api` build script needs a real protoc binary; the packaging scripts export `PROTOC` automatically when `protoc` is on `PATH`).
    - Windows: `choco install protoc`, then `setx PROTOC "C:\ProgramData\chocolatey\bin\protoc.exe"`.
+   - Ubuntu/Debian: `sudo apt install -y build-essential curl wget file pkg-config dpkg-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev protobuf-compiler`.
 
 > The first build compiles the full grok dependency tree (rusqlite/git2 bundled C, prost/protobuf, axum, reqwest, …) — expect **5–10 minutes**. Incremental builds are fast thereafter.
 
@@ -174,11 +175,12 @@ For Windows-specific gotchas (MSVC workload, mirrors, patches), see **[docs/WIND
 <summary><b>🏗️ Build installers</b></summary>
 
 ```bash
-pnpm dist:win    # Windows: NSIS .exe + MSI (requires MSVC link.exe + Windows SDK)
-pnpm dist:mac    # macOS: .dmg (host arch; unsigned / unnotarized)
+pnpm dist:win      # Windows: NSIS .exe + MSI (requires MSVC link.exe + Windows SDK)
+pnpm dist:mac      # macOS: .dmg (host arch; unsigned / unnotarized)
+pnpm dist:linux    # Ubuntu/Debian: .deb
 ```
 
-`grok-build` is vendored as a git submodule at `vendor/grok-build` (pinned to a verified revision). The setup scripts initialize it; `pnpm dist:*` verifies it's present before building.
+`grok-build` is vendored as a git submodule at `vendor/grok-build` (pinned to a verified revision). The setup scripts initialize it; `pnpm dist:*` verifies it's present before building. On Unix hosts, `scripts/build.sh` temporarily disables the Windows-only `rust-toolchain.toml` and restores it after the build.
 
 </details>
 
@@ -225,7 +227,7 @@ src-tauri/               # Rust backend
     commands.rs          # #[tauri::command] table (grok_*)
     sessions.rs          # list ~/.grok/sessions for the sidebar
 
-scripts/                 # build.ps1 (Windows) / build.sh (macOS)
+scripts/                 # build.ps1 (Windows) / build.sh (macOS / Linux)
 docs/                    # WINDOWS_BUILD_NOTES.md — Windows build gotchas
 ```
 
@@ -239,13 +241,12 @@ docs/                    # WINDOWS_BUILD_NOTES.md — Windows build gotchas
 - [x] BYOK multi-provider config
 - [x] Skills / MCP / Experts surfaces
 - [x] Plan mode · Rewind · Tasks · Slash Commands · Automations
-- [x] Windows (NSIS + MSI) & macOS (DMG) installers
+- [x] Windows (NSIS + MSI), macOS (DMG) & Linux (DEB) installers
 - [x] CI release workflow (GitHub Actions)
 - [ ] SceneTabs & skill recommendation bar
 - [ ] Pinned sessions & workspace grouping
 - [ ] Permission management panel
 - [ ] Search across sessions
-- [ ] Linux builds
 - [ ] Code signing & notarization
 
 See [TODO.md](TODO.md) for the full backlog. **PRs welcome** — see below.

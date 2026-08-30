@@ -244,8 +244,119 @@ jobs:
           name: macos-dmg
           path: src-tauri/target/release/bundle/dmg/*.dmg
 
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            wget \
+            file \
+            unzip \
+            pkg-config \
+            dpkg-dev \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev
+
+      - name: Install protoc
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${PROTOC_VERSION}"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64|amd64)  PLATFORM="linux-x86_64" ;;
+            aarch64|arm64) PLATFORM="linux-aarch_64" ;;
+            *) echo "unsupported arch: $ARCH"; exit 1 ;;
+          esac
+          ASSET="protoc-${VER}-${PLATFORM}.zip"
+          URL="https://github.com/protocolbuffers/protobuf/releases/download/v${VER}/${ASSET}"
+          DEST="${RUNNER_TEMP}/protoc"
+          mkdir -p "$DEST"
+          echo "Downloading ${URL}"
+          for i in 1 2 3 4 5; do
+            if curl -fsSL --retry 3 --retry-delay 2 -o "${DEST}/${ASSET}" "$URL"; then
+              break
+            fi
+            echo "download attempt $i failed; sleeping..."
+            sleep $((i * 3))
+            if [[ $i -eq 5 ]]; then
+              echo "failed to download protoc after 5 attempts"
+              exit 1
+            fi
+          done
+          unzip -qo "${DEST}/${ASSET}" -d "$DEST"
+          PROTOC_BIN="${DEST}/bin/protoc"
+          chmod +x "$PROTOC_BIN"
+          test -x "$PROTOC_BIN"
+          echo "${DEST}/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=${PROTOC_BIN}" >> "$GITHUB_ENV"
+          "$PROTOC_BIN" --version
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Apply grok-build patches
+        run: |
+          cd vendor/grok-build
+          for patch in ../../patches/grok-build/*.patch; do
+            echo "Applying $patch ..."
+            git apply --check "$patch" 2>/dev/null && git apply "$patch" || echo "  (already applied or skipped)"
+          done
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Disable Windows-only rust-toolchain.toml
+        run: mv rust-toolchain.toml rust-toolchain.toml.bak
+
+      - name: Build Tauri app (DEB)
+        run: pnpm tauri build --bundles deb
+        env:
+          RUSTUP_TOOLCHAIN: stable
+
+      - name: List artifacts
+        run: |
+          ls src-tauri/target/release/bundle/deb/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+
   publish-release:
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (CHANGELOG for release notes)
@@ -311,5 +422,6 @@ jobs:
           files: |
             artifacts/windows-nsis/*.exe
             artifacts/macos-dmg/*.dmg
+            artifacts/linux-deb/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

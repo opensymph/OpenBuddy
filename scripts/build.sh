@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # ===========================================================================
-#  OpenBuddy macOS packaging script (bash)
+#  OpenBuddy Unix packaging script (macOS / Linux)
 #
-#  Produces a distributable .dmg via `pnpm tauri build --bundles dmg`.
-#  Builds for the host architecture (Apple Silicon or Intel); Tauri picks
-#  the right target automatically.
+#  Produces a distributable installer with Tauri:
+#    - macOS: .dmg by default
+#    - Linux: .deb by default
 #
 #  Usage:
 #    bash scripts/build.sh
 #    bash scripts/build.sh --version 0.2.0
+#    bash scripts/build.sh --bundles deb
+#    bash scripts/build.sh --bundles dmg
 #
 #  Prerequisites:
 #    Run `scripts/setup.sh` once after clone to initialize the
@@ -58,6 +60,7 @@ trap cleanup EXIT INT TERM
 # 1. Parse args
 # ---------------------------------------------------------------------------
 NEW_VERSION=""
+BUNDLES=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --version)
@@ -68,8 +71,16 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
+        --bundles|-b)
+            BUNDLES="${2:-}"
+            if [[ -z "$BUNDLES" ]]; then
+                log_err "--bundles requires a value"
+                exit 1
+            fi
+            shift 2
+            ;;
         -h|--help)
-            sed -n '2,28p' "$0"
+            sed -n '2,31p' "$0"
             exit 0
             ;;
         *)
@@ -80,35 +91,137 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
-# 2. Platform + toolchain checks
+# 2. Platform + default bundle selection
 # ---------------------------------------------------------------------------
 log_step "Checking platform"
-if [[ "$(uname -s)" != "Darwin" ]]; then
-    log_err "This script targets macOS. On Windows use scripts/build.ps1 instead."
-    exit 1
-fi
+UNAME_S="$(uname -s)"
+case "$UNAME_S" in
+    Darwin)
+        PLATFORM_NAME="macOS"
+        DEFAULT_BUNDLES="dmg"
+        ;;
+    Linux)
+        PLATFORM_NAME="Linux"
+        DEFAULT_BUNDLES="deb"
+        ;;
+    *)
+        log_err "Unsupported platform: $UNAME_S. Use scripts/build.ps1 on Windows."
+        exit 1
+        ;;
+esac
 ARCH="$(uname -m)"
-log_ok "macOS detected ($ARCH)"
+if [[ -z "$BUNDLES" ]]; then
+    BUNDLES="$DEFAULT_BUNDLES"
+fi
+log_ok "$PLATFORM_NAME detected ($ARCH); bundles: $BUNDLES"
 
+# rust-toolchain.toml pins a Windows MSVC host; on Unix hosts that triggers an
+# unwanted or invalid toolchain install. Side-step it before probing cargo/rustc.
+if [[ -f "$RUST_TC" ]]; then
+    log_info "Temporarily disabling rust-toolchain.toml (pins Windows MSVC)"
+    RUST_TC_BAK="$RUST_TC.bak.$$"
+    mv "$RUST_TC" "$RUST_TC_BAK"
+fi
+
+bundle_enabled() {
+    local needle="$1"
+    local part
+    local IFS=','
+    read -ra parts <<< "$BUNDLES"
+    for part in "${parts[@]}"; do
+        part="${part//[[:space:]]/}"
+        if [[ "$part" == "$needle" || "$part" == "all" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# ---------------------------------------------------------------------------
+# 3. Toolchain checks
+# ---------------------------------------------------------------------------
 log_step "Checking toolchain"
 for cmd in pnpm cargo rustc; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         log_err "$cmd not found on PATH."
+        case "$cmd" in
+            pnpm)
+                log_info "Install Node 20+ and pnpm first."
+                ;;
+            cargo|rustc)
+                log_info "Install Rust stable first: https://rustup.rs/"
+                ;;
+        esac
         exit 1
     fi
     log_info "$(printf '%-7s %s' "$cmd" "$("$cmd" --version 2>/dev/null | head -1)")"
 done
 
-# grok's build.rs invokes protoc; honor $PROTOC or a protoc on PATH.
-if [[ -z "${PROTOC:-}" ]] && ! command -v protoc >/dev/null 2>&1; then
-    log_err "protoc not found. Install protobuf (brew install protobuf) or set PROTOC=/path/to/protoc."
+# grok's build.rs invokes protoc; prefer $PROTOC, otherwise export the PATH copy.
+if [[ -n "${PROTOC:-}" ]]; then
+    if [[ -x "$PROTOC" ]] || command -v "$PROTOC" >/dev/null 2>&1; then
+        log_ok "protoc available via PROTOC=$PROTOC"
+    else
+        log_err "PROTOC is set but not executable: $PROTOC"
+        exit 1
+    fi
+elif command -v protoc >/dev/null 2>&1; then
+    export PROTOC="$(command -v protoc)"
+    log_ok "PROTOC=$PROTOC"
+else
+    log_err "protoc not found. Install protobuf or set PROTOC=/path/to/protoc."
+    log_info "Ubuntu/Debian: sudo apt install -y protobuf-compiler"
+    log_info "macOS: brew install protobuf"
     exit 1
 fi
-log_ok "protoc available via ${PROTOC:-PATH}"
 log_ok "Core tools present"
 
+check_linux_dependencies() {
+    [[ "$PLATFORM_NAME" == "Linux" ]] || return 0
+
+    log_step "Checking Linux build dependencies"
+    local missing_cmds=()
+    local missing_pkg_configs=()
+
+    for cmd in pkg-config; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing_cmds+=("$cmd")
+        fi
+    done
+
+    if bundle_enabled deb && ! command -v dpkg-deb >/dev/null 2>&1; then
+        missing_cmds+=("dpkg-deb")
+    fi
+
+    if [[ ${#missing_cmds[@]} -eq 0 ]]; then
+        local pkg
+        for pkg in webkit2gtk-4.1 gtk+-3.0 ayatana-appindicator3-0.1 librsvg-2.0 openssl; do
+            if ! pkg-config --exists "$pkg"; then
+                missing_pkg_configs+=("$pkg")
+            fi
+        done
+    fi
+
+    if [[ ${#missing_cmds[@]} -gt 0 || ${#missing_pkg_configs[@]} -gt 0 ]]; then
+        log_err "Missing Linux dependencies."
+        if [[ ${#missing_cmds[@]} -gt 0 ]]; then
+            log_info "Missing commands: ${missing_cmds[*]}"
+        fi
+        if [[ ${#missing_pkg_configs[@]} -gt 0 ]]; then
+            log_info "Missing pkg-config packages: ${missing_pkg_configs[*]}"
+        fi
+        log_info "Ubuntu/Debian:"
+        log_info "  sudo apt update"
+        log_info "  sudo apt install -y build-essential curl wget file pkg-config dpkg-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev protobuf-compiler"
+        exit 1
+    fi
+
+    log_ok "Linux build dependencies present"
+}
+check_linux_dependencies
+
 # ---------------------------------------------------------------------------
-# 3. Version sync (optional)
+# 4. Version sync (optional)
 # ---------------------------------------------------------------------------
 if [[ -n "$NEW_VERSION" ]]; then
     log_step "Syncing version -> $NEW_VERSION"
@@ -126,13 +239,13 @@ if [[ -n "$NEW_VERSION" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. grok-build submodule sanity check (path deps in Cargo.toml are relative
+# 5. grok-build submodule sanity check (path deps in Cargo.toml are relative
 #    to vendor/grok-build, so the submodule must be present) + ensure the
-#    Windows protoc patch is applied (idempotent).
+#    protoc patch is applied (idempotent).
 # ---------------------------------------------------------------------------
 log_step "Checking grok-build submodule"
 GROK_SUBMODULE="$PROJECT_ROOT/vendor/grok-build"
-if [[ ! -d "$GROK_SUBMODULE/.git" ]]; then
+if ! git -C "$GROK_SUBMODULE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     log_err "grok-build submodule not initialized at: $GROK_SUBMODULE"
     log_err "Run \`scripts/setup.sh\` (or \`git submodule update --init vendor/grok-build\`) and retry."
     exit 1
@@ -155,33 +268,38 @@ if [[ -d "$PATCH_DIR" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 5. rust-toolchain.toml pins windows-msvc host; on macOS that triggers an
-#    unwanted toolchain install. Side-step it for this run.
-# ---------------------------------------------------------------------------
-if [[ -f "$RUST_TC" ]]; then
-    log_info "Temporarily disabling rust-toolchain.toml (pins windows-msvc)"
-    RUST_TC_BAK="$RUST_TC.bak.$$"
-    mv "$RUST_TC" "$RUST_TC_BAK"
-fi
-
-# ---------------------------------------------------------------------------
 # 6. Build (frontend build runs automatically via beforeBuildCommand).
 # ---------------------------------------------------------------------------
-log_step "Building .dmg (pnpm tauri build --bundles dmg)"
+log_step "Building bundles: $BUNDLES (pnpm tauri build --bundles $BUNDLES)"
 BUILD_RC=0
-pnpm tauri build --bundles dmg || BUILD_RC=$?
+pnpm tauri build --bundles "$BUNDLES" || BUILD_RC=$?
 
 # ---------------------------------------------------------------------------
 # 7. Report artifacts.
 # ---------------------------------------------------------------------------
-BUNDLE_DIR="$PROJECT_ROOT/src-tauri/target/release/bundle/dmg"
-if [[ $BUILD_RC -eq 0 && -d "$BUNDLE_DIR" ]]; then
-    log_step "Build succeeded. Artifacts:"
+BUNDLE_ROOT="$PROJECT_ROOT/src-tauri/target/release/bundle"
+FOUND_ARTIFACTS=0
+report_bundle_artifacts() {
+    local bundle="$1"
+    local ext="$2"
+    local dir="$BUNDLE_ROOT/$bundle"
+    [[ -d "$dir" ]] || return 0
     while IFS= read -r -d '' f; do
         size_mb=$(du -m "$f" | cut -f1)
         log_ok "$(basename "$f")  (${size_mb} MB)"
         log_info "$f"
-    done < <(find "$BUNDLE_DIR" -name '*.dmg' -print0)
+        FOUND_ARTIFACTS=1
+    done < <(find "$dir" -maxdepth 1 -type f -name "$ext" -print0)
+}
+
+if [[ $BUILD_RC -eq 0 ]]; then
+    log_step "Build succeeded. Artifacts:"
+    report_bundle_artifacts dmg '*.dmg'
+    report_bundle_artifacts deb '*.deb'
+    report_bundle_artifacts appimage '*.AppImage'
+    if [[ $FOUND_ARTIFACTS -eq 0 ]]; then
+        log_warn "No bundle artifacts found under $BUNDLE_ROOT"
+    fi
 else
     log_err "Build failed (exit $BUILD_RC). See output above."
 fi
